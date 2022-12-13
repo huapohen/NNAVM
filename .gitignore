@@ -1,3 +1,11 @@
+# .vscode/
+git/
+avm_reference/
+dataset_ref/
+# dataset/data/fev/
+# dataset/data/fev2bev/
+dataset_maker/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
