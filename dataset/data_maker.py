@@ -13,7 +13,7 @@ import torchvision.transforms as T
 from PIL import Image
 from itertools import permutations
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 
 class DLT(nn.Module):
@@ -25,6 +25,7 @@ class DLT(nn.Module):
         self.camera_list = ["front", "back", "left", "right"]
         self.enable_cuda = enable_cuda
         self.warp_torch_op_f = WarpTorchOP(batch_size, 1078, 336, 0, enable_cuda)
+        # self.warp_torch_op_f = WarpTorchOP(batch_size, 1984, 1488, 0, enable_cuda)
 
     def read_points(self):
         path = "dataset/data/detected_points.json"
@@ -79,6 +80,8 @@ class DLT(nn.Module):
                 H_t = H_t.cuda()
                 H_cv2_t = H_cv2_t.cuda()
                 src_t = src_t.cuda()
+            H_t = torch.inverse(H_t)
+            H_cv2_t = torch.inverse(H_cv2_t)
             dst3 = self.warp_torch_op_f(src_t, H_t)
             dst4 = self.warp_torch_op_f(src_t, H_cv2_t)
             if self.enable_cuda:
@@ -620,7 +623,7 @@ class WarpTorchOP(nn.Module):
 
     def forward(self, src, H):
         flow, vgrid = self.get_flow_vgrid(H, self.grid, self.h, self.w, 1)
-        dst = self.warp_image(src, vgrid)
+        dst = self.warp_image(src, vgrid + flow)
 
         return dst
 
@@ -628,7 +631,7 @@ class WarpTorchOP(nn.Module):
 if __name__ == "__main__":
 
     # test_mode = 'cv2'
-    test_mode = "torch" # implement H and warp use pytorch
+    test_mode = "torch"
 
     if test_mode == "cv2":
         datamaker = DatasetMaker()
