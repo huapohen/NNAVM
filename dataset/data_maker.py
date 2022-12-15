@@ -13,7 +13,7 @@ import torchvision.transforms as T
 from PIL import Image
 from itertools import permutations
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 class DLT(nn.Module):
