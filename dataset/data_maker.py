@@ -628,7 +628,7 @@ class WarpTorchOP(nn.Module):
 if __name__ == "__main__":
 
     # test_mode = 'cv2'
-    test_mode = "torch"
+    test_mode = "torch" # implement H and warp use pytorch
 
     if test_mode == "cv2":
         datamaker = DatasetMaker()
