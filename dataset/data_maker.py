@@ -13,186 +13,178 @@ import torchvision.transforms as T
 from PIL import Image
 from itertools import permutations
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+
+random.seed(0)
+np.random.seed(0)
+torch.manual_seed(0)
 
 
-class DLT(nn.Module):
-    def __init__(self, batch_size=1, nums_pt=4, enable_cuda=True):
-        super(DLT, self).__init__()
-        self.batch_size = batch_size
-        self.nums_pt = nums_pt
-        self.bev_fblr_wh = [[1078, 336], [1078, 336], [1172, 439], [1172, 439]]
-        self.camera_list = ["front", "back", "left", "right"]
+class DataMakerTorch(nn.Module):
+    '''
+    if enable cuda, the result caculated by homo_torch_op is error, surprisely!
+    if disable cuda (use cpu), the result is right.
+    Why ?
+    cuda core operation mechanism?
+    '''
+    def __init__(self, enable_cuda=True):
+        super().__init__()
+        self.batch_size = batch_size = 1
         self.enable_cuda = enable_cuda
-        self.warp_torch_op_f = WarpTorchOP(batch_size, 1078, 336, 0, enable_cuda)
-        # self.warp_torch_op_f = WarpTorchOP(batch_size, 1984, 1488, 0, enable_cuda)
+        self.suff = 'gpu' if enable_cuda else 'cpu'
+        self.offset_pix_range = 10
+        self.perturb_mode = 'random'
+        # the idx=0 image don't perturb, and the idx=1 to idx=1000 images are perturbed
+        self.num_generated_points = 1001
+        self.method = 'Axb'
+        self.dst_wh_fblr = [(1078, 336), (1078, 336), (1172, 439), (1172, 439)]
+        self.camera_fblr = ["front", "back", "left", "right"]
+        self.index = [0, 3, 4, 7]
+        self.base_dir = base_dir = 'dataset/data'
+        self.fev_dir = f'{base_dir}/fev'
+        self.undist_dir = f'{base_dir}/undist'
+        self.bev_dir = f'{base_dir}/bev'
+        self.warp_dir = f'{base_dir}/warp'
+        self.pts_path = f"{base_dir}/detected_points.json"
+        self.perturb_pts_path = f"{base_dir}/perturbed_points.json"
+        self.generate_dir = f'{base_dir}/generate'
+        self.homo_torch_op = HomoTorchOP(method=self.method)
+        self.warp_torch_op = {
+            "front": WarpTorchOP(batch_size, 1078, 336, 0, enable_cuda),
+            "back": WarpTorchOP(batch_size, 1078, 336, 0, enable_cuda),
+            "left": WarpTorchOP(batch_size, 1172, 439, 0, enable_cuda),
+            "right": WarpTorchOP(batch_size, 1172, 439, 0, enable_cuda)
+            }
 
-    def read_points(self):
-        path = "dataset/data/detected_points.json"
-        with open(path, "r") as f:
+    def read_points(self, index=[0, 3, 4, 7]):
+        with open(self.pts_path, "r") as f:
             pts = json.load(f)
-        pt_det_fblr = {}
-        pt_bev_fblr = {}
-        for camera in self.camera_list:
-            pt_det = pts["detected_points"][camera]
-            pt_bev = pts["corner_points"][camera]
-            pt_det = [[[pt_det[i * 2], pt_det[i * 2 + 1]] for i in range(8)]]
-            pt_bev = [[[pt_bev[i * 2], pt_bev[i * 2 + 1]] for i in range(8)]]
-            pt_det = torch.Tensor(pt_det).reshape(1, -1, 2)
-            pt_bev = torch.Tensor(pt_bev).reshape(1, -1, 2)
-            pt_det_fblr[camera] = pt_det
-            pt_bev_fblr[camera] = pt_bev
-        return pt_det_fblr, pt_bev_fblr
-
+        pt_src_fblr = {}
+        pt_dst_fblr = {}
+        if index is None:
+            index = self.index
+        for camera in self.camera_fblr:
+            pt_src = pts["detected_points"][camera]
+            pt_dst = pts["corner_points"][camera]
+            pt_src = [[[pt_src[i * 2], pt_src[i * 2 + 1]] for i in index]]
+            pt_dst = [[[pt_dst[i * 2], pt_dst[i * 2 + 1]] for i in index]]
+            pt_src = torch.Tensor(pt_src).reshape(1, -1, 2)
+            pt_dst = torch.Tensor(pt_dst).reshape(1, -1, 2)
+            if self.enable_cuda:
+                pt_src = pt_src.cuda()
+                pt_dst = pt_dst.cuda()
+            pt_src_fblr[camera] = pt_src
+            pt_dst_fblr[camera] = pt_dst
+        return pt_src_fblr, pt_dst_fblr
+    
+    def perturb_func(self, pts, mode='random'):
+        assert mode in ['random', 'permutation', 'diffusion', 'learned']
+        assert self.offset_pix_range > 0
+        _pix = int(self.offset_pix_range)
+        pts = np.asarray(pts)
+        gen = np.copy(pts)
+        offset = np.zeros_like(pts)
+        gen_list = {}
+        off_list = {}
+        if mode == 'random':
+            for i in range(self.num_generated_points):
+                np.random.seed(i)
+                offset = np.random.randint(-1 * _pix, _pix, pts.shape)
+                if i == 0:
+                    offset = np.zeros_like(pts)
+                new_pt = gen + offset
+                idx = f'{i:04}'
+                gen_list[idx] = new_pt.tolist()
+                off_list[idx] = offset.tolist()
+        return gen_list, off_list
+    
+    def generate_perturbed_points(self, index=[0, 3, 4, 7]):
+        with open(self.pts_path, "r") as f:
+            pts = json.load(f)
+        pts_perturb = {}
+        if index is None:
+            index = self.index
+        for camera in self.camera_fblr:
+            pt_ori = pts["detected_points"][camera]
+            # pt_ori = pts["corner_points"][camera]
+            pt_ori = [[pt_ori[i * 2], pt_ori[i * 2 + 1]] for i in index]
+            gen_list, offset_list = self.perturb_func(pt_ori, self.perturb_mode)
+            pts_perturb[camera] = {
+                "original_points": pt_ori,
+                "num_pts": self.num_generated_points,
+                "perturbed_points_list": gen_list,
+                "offset_list": offset_list
+                }
+        with open(self.perturb_pts_path, 'w') as f:
+            json.dump(pts_perturb, f)
+            
+        return pts_perturb
+    
+    def warp_perturbed_image(self, pts_perturb=None):
+        pt_src_fblr, pt_dst_fblr = self.read_points(self.index)
+        src_fblr = self.read_image_fblr()
+        if pts_perturb is None:
+            with open(self.perturb_pts_path, 'r') as f:
+                pts_perturb = json.load(f)
+        for camera in self.camera_fblr:
+            for i in range(self.num_generated_points):
+                idx = f'{i:04}'
+                pt_src = pts_perturb[camera]['perturbed_points_list'][idx]
+                pt_src = torch.Tensor(pt_src).reshape(1, -1, 2)
+                if self.enable_cuda:
+                    pt_src = pt_src.cuda()
+                pt_dst = pt_dst_fblr[camera]
+                H = self.homo_torch_op(pt_src, pt_dst)[0]
+                H_inv = torch.inverse(H).unsqueeze(0)
+                src = src_fblr[camera]
+                dst = self.warp_torch_op[camera](src, H_inv)
+                dst = dst.detach().cpu()
+                dst = dst.squeeze(0).numpy().transpose((1, 2, 0))
+                dst = cv2.cvtColor(dst, cv2.COLOR_RGB2BGR)
+                save_dir = f"{self.generate_dir}/{camera}"
+                os.makedirs(save_dir, exist_ok=True)
+                path = f"{save_dir}/{idx}_{self.suff}.jpg"
+                cv2.imwrite(path, dst)
+        return
+        
     def read_image_fblr(self):
         img_fblr = {}
-        for camera in self.camera_list:
-            path = f"dataset/data/undist/{camera}.jpg"
-            img_fblr[camera] = cv2.imread(path)
+        for camera in self.camera_fblr:
+            path = f"{self.undist_dir}/{camera}.jpg"
+            img = cv2.imread(path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = img.transpose((2, 0, 1))[np.newaxis, :]
+            img = torch.from_numpy(img)
+            if self.enable_cuda:
+                img = img.cuda()
+            img_fblr[camera] = img
         return img_fblr
-
+    
     def warp_image(self):
-        pt_det_fblr, pt_bev_fblr = self.read_points()
+        pt_src_fblr, pt_dst_fblr = self.read_points(self.index)
         src_fblr = self.read_image_fblr()
-        base_dir = f"dataset/data/warp/"
-        os.makedirs(base_dir, exist_ok=True)
-        with open(f"dataset/data/homo.json", "r") as f:
-            H_fblr = json.load(f)
-        H_fblr = H_fblr["undist2bev"]
-        for i, camera in enumerate(self.camera_list):
-            ind = [0, 1, 2, 5, 7, 4, 6, 3]  # aim at front
-            pt_det = pt_det_fblr[camera][:, ind]
-            pt_bev = pt_bev_fblr[camera][:, ind]
-            H = self.get_homography(pt_det, pt_bev, method="Ax0")[0]
-            H_n = H
-            out_wh = tuple(self.bev_fblr_wh[i])
+        for camera in self.camera_fblr:
+            pt_src = pt_src_fblr[camera]
+            pt_dst = pt_dst_fblr[camera]
+            H = self.homo_torch_op(pt_src, pt_dst)[0]
+            H_inv = torch.inverse(H).unsqueeze(0)
             src = src_fblr[camera]
-            H_cv2 = np.asarray(H_fblr[camera])
-            dst1 = cv2.warpPerspective(src, H.numpy(), out_wh, cv2.INTER_LINEAR)
-            dst2 = cv2.warpPerspective(src, H_cv2, out_wh, cv2.INTER_LINEAR)
-            # torch tensor
-            src_t = cv2.cvtColor(src, cv2.COLOR_BGR2RGB)
-            src_t = src_t.transpose((2, 0, 1))[np.newaxis, :]
-            src_t = torch.from_numpy(src_t)
-            H_t = H_n.unsqueeze(0)
-            H_cv2_t = torch.from_numpy(H_cv2[np.newaxis, :]).float()
-            if self.enable_cuda:
-                H_t = H_t.cuda()
-                H_cv2_t = H_cv2_t.cuda()
-                src_t = src_t.cuda()
-            H_t = torch.inverse(H_t)
-            H_cv2_t = torch.inverse(H_cv2_t)
-            dst3 = self.warp_torch_op_f(src_t, H_t)
-            dst4 = self.warp_torch_op_f(src_t, H_cv2_t)
-            if self.enable_cuda:
-                dst3 = dst3.detach().cpu()
-                dst4 = dst4.detach().cpu()
-            dst3 = dst3.squeeze(0).numpy().transpose((1, 2, 0))
-            dst4 = dst4.squeeze(0).numpy().transpose((1, 2, 0))
-            dst3 = cv2.cvtColor(dst3, cv2.COLOR_RGB2BGR)
-            dst4 = cv2.cvtColor(dst4, cv2.COLOR_RGB2BGR)
-            path1 = f"{base_dir}/{camera}_torch.jpg"
-            path2 = f"{base_dir}/{camera}_cv2.jpg"
-            path3 = f"{base_dir}/{camera}_torch+warp.jpg"
-            path4 = f"{base_dir}/{camera}_cv2+warp.jpg"
-            cv2.imwrite(path1, dst1)
-            cv2.imwrite(path2, dst2)
-            cv2.imwrite(path3, dst3)
-            cv2.imwrite(path4, dst4)
-            # continue
-            sys.exit()
-
-    def warp_image_fblr_cv2(self):
-        pt_det_fblr, pt_bev_fblr = self.read_points()
-        src_fblr = self.read_image_fblr()
-        base_dir = f"dataset/data/dlt_ransac/"
-        os.makedirs(base_dir, exist_ok=True)
-        H_front_cv2 = np.array(
-            [
-                [-1.18341001e-01, -7.84464841e-01, 6.58913622e02],
-                [2.95135515e-04, -5.52357359e-01, 4.02816933e02],
-                [6.82651697e-06, -1.45770745e-03, 1.00000000e00],
-            ]
-        )
-        for i, camera in enumerate(self.camera_list):
-            # ind = [0, 1, 4, 5]
-            # ind = [2, 3, 6, 7]
-            # ind = [0, 1, 2, 3, 4, 5, 6, 7]
-            # ind = [0, 3, 6, 7, 2, 4]
-            for num_pts in range(4, 9):
-                ind_list = permutations(range(8), num_pts)
-                ind_js = {}
-                for iter, ind in enumerate(ind_list):
-                    ind_js[f"{iter + 1:05}"] = list(ind)
-                    pt_det = pt_det_fblr[camera][:, ind]
-                    pt_bev = pt_bev_fblr[camera][:, ind]
-                    H = self.get_homography(pt_det, pt_bev, method="Ax0")[0]
-                    H = H.cpu().numpy()
-                    out_wh = self.bev_fblr_wh[i]
-                    src = src_fblr[camera]
-                    dst = cv2.warpPerspective(src, H, out_wh, cv2.INTER_LINEAR)
-                    # dst = cv2.warpPerspective(src, H_front_cv2, out_wh, cv2.INTER_LINEAR)
-                    save_dir = f"{base_dir}/num={num_pts}"
-                    os.makedirs(save_dir, exist_ok=True)
-                    path = f"{save_dir}/{iter:05}.jpg"
-                    cv2.imwrite(path, dst)
-                with open(f"{base_dir}/ind_list_num={num_pts}.json", "w") as f:
-                    json.dump(ind_js, f)
-            sys.exit()
+            dst = self.warp_torch_op[camera](src, H_inv)
+            dst = dst.detach().cpu()
+            dst = dst.squeeze(0).numpy().transpose((1, 2, 0))
+            dst = cv2.cvtColor(dst, cv2.COLOR_RGB2BGR)
+            save_dir = f"{self.warp_dir}/{camera}"
+            os.makedirs(save_dir, exist_ok=True)
+            path = f"{save_dir}/0001_{self.suff}.jpg"
+            cv2.imwrite(path, dst)
         return
+        
+    def forward(self):
 
-    def get_homography(self, src_pt, dst_pt, method="Ax0"):
-        """
-        :param src_pt: shape=(batch, num, 2)
-        :param dst_pt:
-        :param method: Axb (Full Rank Decomposition, inv_SVD) = 4 piar points
-                       Ax0 (SVD) >= 4 pair points, 4,6,8
-        :return: Homography
-        """
-        assert method in ["Ax0", "Axb"]
-        self.batch_size, self.nums_pt = src_pt.shape[0], src_pt.shape[1]
-        xy1 = torch.cat(
-            (src_pt, src_pt.new_ones(self.batch_size, self.nums_pt, 1)), dim=-1
-        )
-        xyu = torch.cat(
-            (xy1, xy1.new_zeros((self.batch_size, self.nums_pt, 3))), dim=-1
-        )
-        xyd = torch.cat(
-            (xy1.new_zeros((self.batch_size, self.nums_pt, 3)), xy1), dim=-1
-        )
-        M1 = torch.cat((xyu, xyd), dim=-1).view(self.batch_size, -1, 6)
-        M2 = torch.matmul(dst_pt.view(-1, 2, 1), src_pt.view(-1, 1, 2)).view(
-            self.batch_size, -1, 2
-        )
-        M3 = dst_pt.view(self.batch_size, -1, 1)
-
-        if method == "Ax0":
-            A = torch.cat((M1, -M2, -M3), dim=-1)
-            U, S, V = torch.svd(A)
-            V = V.transpose(-2, -1).conj()
-            H = V[:, -1].view(self.batch_size, 3, 3)
-            H *= 1 / H[:, -1, -1].view(self.batch_size, 1, 1)
-        elif method == "Axb":
-            A = torch.cat((M1, -M2), dim=-1)
-            B = M3
-            A_inv = torch.inverse(A)
-            H = torch.cat(
-                (
-                    torch.matmul(A_inv, B).view(-1, 8),
-                    src_pt.new_ones((self.batch_size, 1)),
-                ),
-                1,
-            ).view(self.batch_size, 3, 3)
-        return H
-
-    def forward(self, src_pt, dst_pt, method="Ax0"):
-
-        H = self.get_homography(src_pt, dst_pt, method)
-
-        return H
+        return self.warp_image()
 
 
-class DatasetMaker:
+class DataMakerCV2:
     def __init__(self):
         self.base_path = os.path.join(os.getcwd(), "dataset/data")
         fish = {"scale": 0.5, "width": 1280, "height": 960}
@@ -440,6 +432,68 @@ class DatasetMaker:
         return dst_fblr
 
 
+class HomoTorchOP(nn.Module):
+    def __init__(self, method='Axb'):
+        super().__init__()
+        self.method = method
+    
+    def dlt_homo(self, src_pt, dst_pt, method="Axb"):
+        """
+        :param src_pt: shape=(batch, num, 2)
+        :param dst_pt:
+        :param method: Axb (Full Rank Decomposition, inv_SVD) = 4 piar points
+                    Ax0 (SVD) >= 4 pair points, 4,6,8
+        :return: Homography
+        """
+        assert method in ["Ax0", "Axb"]
+        assert src_pt.shape[1] >= 4
+        assert dst_pt.shape[1] >= 4
+        if method == 'Axb':
+            assert src_pt.shape[1] == 4
+            assert dst_pt.shape[1] == 4
+        self.batch_size, self.nums_pt = src_pt.shape[0], src_pt.shape[1]
+        xy1 = torch.cat(
+            (src_pt, src_pt.new_ones(self.batch_size, self.nums_pt, 1)), dim=-1
+        )
+        xyu = torch.cat(
+            (xy1, xy1.new_zeros((self.batch_size, self.nums_pt, 3))), dim=-1
+        )
+        xyd = torch.cat(
+            (xy1.new_zeros((self.batch_size, self.nums_pt, 3)), xy1), dim=-1
+        )
+        M1 = torch.cat((xyu, xyd), dim=-1).view(self.batch_size, -1, 6)
+        M2 = torch.matmul(dst_pt.view(-1, 2, 1), src_pt.view(-1, 1, 2)).view(
+            self.batch_size, -1, 2
+        )
+        M3 = dst_pt.view(self.batch_size, -1, 1)
+
+        if method == "Ax0":
+            A = torch.cat((M1, -M2, -M3), dim=-1)
+            U, S, V = torch.svd(A)
+            V = V.transpose(-2, -1).conj()
+            H = V[:, -1].view(self.batch_size, 3, 3)
+            H *= 1 / H[:, -1, -1].view(self.batch_size, 1, 1)
+        elif method == "Axb":
+            A = torch.cat((M1, -M2), dim=-1)
+            B = M3
+            A_inv = torch.inverse(A)
+            H = torch.cat(
+                (
+                    torch.matmul(A_inv, B).view(-1, 8),
+                    src_pt.new_ones((self.batch_size, 1)),
+                ),
+                1,
+            ).view(self.batch_size, 3, 3)
+            
+        return H
+    
+    def forward(self, src_pt, dst_pt):
+        
+        H = self.dlt_homo(src_pt, dst_pt, self.method)
+        
+        return H
+    
+
 class WarpTorchOP(nn.Module):
     def __init__(self, batch_size, w, h, start=0, enable_cuda=True):
         super().__init__()
@@ -634,7 +688,7 @@ if __name__ == "__main__":
     test_mode = "torch"
 
     if test_mode == "cv2":
-        datamaker = DatasetMaker()
+        datamaker = DataMakerCV2()
 
         mode = "fev2bev"
         # mode = 'fev2undist'
@@ -646,8 +700,9 @@ if __name__ == "__main__":
         datamaker.remap_image_cv2(img_fblr, map_fblr, is_save=True, save_mode=mode)
 
     else:
-        # dlt = DLT(1, 8, False)
-        dlt = DLT(1, 8, True)
-        dlt.warp_image()
-
+        init = DataMakerTorch()
+        init.generate_perturbed_points()
+        for enable_cuda in [False, True]:
+            generator = DataMakerTorch(enable_cuda)
+            generator.warp_perturbed_image()
     pass
