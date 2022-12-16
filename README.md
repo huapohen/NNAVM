@@ -4,8 +4,8 @@ finishied:
 3.  generate fake data, which used for training End-to-End AVM
 
 todo:  
-  fish-eye vision image to undistorted image  
-  pipeline:  
-    model code & loss func & evaluate criteria / benchmark  
-    training  
+  4. fish-eye vision image to undistorted image  
+  5. pipeline:  
+    5.1 model code & loss func & evaluate criteria / benchmark  
+    5.2 training  
     
