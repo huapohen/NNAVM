@@ -5,6 +5,7 @@ import math
 import json
 import time
 import torch
+import shutil
 import random
 import numpy as np
 import torch.nn as nn
@@ -27,7 +28,7 @@ class DataMakerTorch(nn.Module):
     Why ?
     cuda core operation mechanism?
     '''
-    def __init__(self, enable_cuda=True):
+    def __init__(self, mode='train', enable_cuda=True):
         super().__init__()
         self.batch_size = batch_size = 1
         self.enable_cuda = enable_cuda
@@ -35,7 +36,15 @@ class DataMakerTorch(nn.Module):
         self.offset_pix_range = 10
         self.perturb_mode = 'random'
         # the idx=0 image don't perturb, and the idx=1 to idx=1000 images are perturbed
-        self.num_generated_points = 1001
+        train_img_num = 1001
+        test_img_num = 201
+        version = 'v1'
+        if mode == 'train':
+            self.num_generated_points = train_img_num
+            self.delta_num = 0
+        else: #test
+            self.num_generated_points = test_img_num
+            self.delta_num = train_img_num
         self.method = 'Axb'
         self.dst_wh_fblr = [(1078, 336), (1078, 336), (1172, 439), (1172, 439)]
         self.camera_fblr = ["front", "back", "left", "right"]
@@ -46,8 +55,11 @@ class DataMakerTorch(nn.Module):
         self.bev_dir = f'{base_dir}/bev'
         self.warp_dir = f'{base_dir}/warp'
         self.pts_path = f"{base_dir}/detected_points.json"
-        self.perturb_pts_path = f"{base_dir}/perturbed_points.json"
-        self.generate_dir = f'{base_dir}/generate'
+        dataset_dir = base_dir
+        self.dataset_dir_mode = f"{dataset_dir}/{version}/{mode}"
+        os.makedirs(self.dataset_dir_mode, exist_ok=True)
+        self.perturb_pts_path = f"{self.dataset_dir_mode}/perturbed_points.json"
+        self.generate_dir = f'{self.dataset_dir_mode}/generate'
         self.homo_torch_op = HomoTorchOP(method=self.method)
         self.warp_torch_op = {
             "front": WarpTorchOP(batch_size, 1078, 336, 0, enable_cuda),
@@ -87,10 +99,10 @@ class DataMakerTorch(nn.Module):
         gen_list = {}
         off_list = {}
         if mode == 'random':
-            for i in range(self.num_generated_points):
+            for i in range(self.delta_num, self.delta_num + self.num_generated_points):
                 np.random.seed(i)
                 offset = np.random.randint(-1 * _pix, _pix, pts.shape)
-                if i == 0:
+                if i == self.delta_num:
                     offset = np.zeros_like(pts)
                 new_pt = gen + offset
                 idx = f'{i:04}'
@@ -127,7 +139,7 @@ class DataMakerTorch(nn.Module):
             with open(self.perturb_pts_path, 'r') as f:
                 pts_perturb = json.load(f)
         for camera in self.camera_fblr:
-            for i in range(self.num_generated_points):
+            for i in range(self.delta_num, self.delta_num + self.num_generated_points):
                 idx = f'{i:04}'
                 pt_src = pts_perturb[camera]['perturbed_points_list'][idx]
                 pt_src = torch.Tensor(pt_src).reshape(1, -1, 2)
@@ -146,6 +158,14 @@ class DataMakerTorch(nn.Module):
                 path = f"{save_dir}/{idx}_{self.suff}.jpg"
                 cv2.imwrite(path, dst)
         return
+    
+    def shutil_copy(self):
+        shutil.copy('dataset/data/detected_points.json',
+                    f'{self.dataset_dir_mode}/detected_points.json')
+        shutil.copy('dataset/data/homo.json',
+                    f'{self.dataset_dir_mode}/homo.json')
+        shutil.copytree('dataset/data/bev',
+                    f'{self.dataset_dir_mode}/bev')
         
     def read_image_fblr(self):
         img_fblr = {}
@@ -683,6 +703,7 @@ class WarpTorchOP(nn.Module):
 
 
 if __name__ == "__main__":
+    
 
     # test_mode = 'cv2'
     test_mode = "torch"
@@ -700,9 +721,11 @@ if __name__ == "__main__":
         datamaker.remap_image_cv2(img_fblr, map_fblr, is_save=True, save_mode=mode)
 
     else:
-        init = DataMakerTorch()
-        init.generate_perturbed_points()
-        for enable_cuda in [False, True]:
-            generator = DataMakerTorch(enable_cuda)
-            generator.warp_perturbed_image()
+        for mode in ['train', 'test']:
+            init = DataMakerTorch(mode)
+            init.generate_perturbed_points()
+            for enable_cuda in [False, True]:
+                generator = DataMakerTorch(mode, enable_cuda)
+                generator.warp_perturbed_image()
+            init.shutil_copy()
     pass
