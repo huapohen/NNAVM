@@ -237,7 +237,7 @@ def get_origin_undist():
 def get_bev_ori(batch_size):
     bev_ori_fblr = []
     for camera in ['front', 'back', 'left', 'right']:
-        img = cv2.imread(f'./dataset/data/bev/{camera}_cpu.jpg')
+        img = cv2.imread(f'./dataset/data/bev/undist2bev/{camera}.png')
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = np.transpose(img, (2, 0, 1))
         img = torch.from_numpy(img)
@@ -327,4 +327,5 @@ def compute_losses(param, delta, labels, bev_coords, bev_ori_fblr):
     for i in range(4):
         loss = F.l1_loss(bev_warped_fblr[i], bev_ori_fblr[i].float())
         losses += loss.mean()
+        # break
     return {"total": losses}

@@ -41,36 +41,37 @@ class YOLOPAFPN(nn.Module):
     def __init__(
         self,
         params,
-        in_dim,
+        in_channel,
         depth=1.0,
         width=1.0,
         in_features=("dark3", "dark4", "dark5"),
-        in_channels=[256, 512, 1024],
+        fpn_channels=[256, 512, 1024],
         depthwise=False,
         act="silu",
         expand_ratio=0.5,
     ):
         super().__init__()
-        fix_expand = params.fix_expand
-        self.is_deploy = params.is_BNC
+        fix_expand = params.yolo_fix_expand
 
-        self.backbone = CSPDarknet(in_dim, depth, width, depthwise=depthwise, act=act)
+        self.backbone = CSPDarknet(
+            in_channel, depth, width, depthwise=depthwise, act=act
+        )
 
         self.in_features = in_features
-        self.in_channels = in_channels
+        self.fpn_channels = fpn_channels
         Conv = DWConv if depthwise else BaseConv
 
-        if params.upsample_type == 'bilinear':  # SNPE 不支持 nearest
+        if params.yolo_upsample_type == 'bilinear':  # SNPE 不支持 nearest
             self.upsample = nn.UpsamplingBilinear2d(scale_factor=2)
         else:  # default
             self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
 
         self.lateral_conv0 = BaseConv(
-            int(in_channels[2] * width), int(in_channels[1] * width), 1, 1, act=act
+            int(fpn_channels[2] * width), int(fpn_channels[1] * width), 1, 1, act=act
         )
         self.C3_p4 = CSPLayer(
-            int(2 * in_channels[1] * width),
-            int(in_channels[1] * width),
+            int(2 * fpn_channels[1] * width),
+            int(fpn_channels[1] * width),
             round(3 * depth),
             False,
             expansion=expand_ratio,
@@ -79,11 +80,11 @@ class YOLOPAFPN(nn.Module):
         )  # cat
 
         self.reduce_conv1 = BaseConv(
-            int(in_channels[1] * width), int(in_channels[0] * width), 1, 1, act=act
+            int(fpn_channels[1] * width), int(fpn_channels[0] * width), 1, 1, act=act
         )
         self.C3_p3 = CSPLayer(
-            int(2 * in_channels[0] * width),
-            int(in_channels[0] * width),
+            int(2 * fpn_channels[0] * width),
+            int(fpn_channels[0] * width),
             round(3 * depth),
             False,
             expansion=1 if depthwise or fix_expand else expand_ratio,
@@ -93,11 +94,11 @@ class YOLOPAFPN(nn.Module):
 
         # bottom-up conv
         self.bu_conv2 = Conv(
-            int(in_channels[0] * width), int(in_channels[0] * width), 3, 2, act=act
+            int(fpn_channels[0] * width), int(fpn_channels[0] * width), 3, 2, act=act
         )
         self.C3_n3 = CSPLayer(
-            int(2 * in_channels[0] * width),
-            int(in_channels[1] * width),
+            int(2 * fpn_channels[0] * width),
+            int(fpn_channels[1] * width),
             round(3 * depth),
             False,
             expansion=expand_ratio,
@@ -107,11 +108,11 @@ class YOLOPAFPN(nn.Module):
 
         # bottom-up conv
         self.bu_conv1 = Conv(
-            int(in_channels[1] * width), int(in_channels[1] * width), 3, 2, act=act
+            int(fpn_channels[1] * width), int(fpn_channels[1] * width), 3, 2, act=act
         )
         self.C3_n4 = CSPLayer(
-            int(2 * in_channels[1] * width),
-            int(in_channels[2] * width),
+            int(2 * fpn_channels[1] * width),
+            int(fpn_channels[2] * width),
             round(3 * depth),
             False,
             expansion=expand_ratio,
@@ -157,23 +158,20 @@ class YOLOXHead(nn.Module):
     def __init__(
         self,
         params,
-        num_classes,
+        out_channel,
         head_width=1.0,
         yolo_width=1.0,
-        in_channels=[256, 512, 1024],
-        act="silu",
-        depthwise=False,
+        fpn_channels=[256, 512, 1024],
     ):
         super().__init__()
-        out_ch = params.perturbed_points * 2
 
         self.seq = nn.Sequential(
-            nn.Conv2d(int(in_channels[-1] * yolo_width), int(256 * head_width), 1),
+            nn.Conv2d(int(fpn_channels[-1] * yolo_width), int(256 * head_width), 1),
             nn.BatchNorm2d(int(256 * head_width)),
             nn.ReLU(True),
             nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(int(256 * head_width), 2 * int(256 * head_width), 1),
-            nn.Conv2d(2 * int(256 * head_width), out_ch, 1),
+            nn.Conv2d(2 * int(256 * head_width), out_channel, 1),
             nn.Flatten(1),
             nn.Tanh(),
         )
@@ -192,22 +190,20 @@ def get_model(params):
 
     backbone = YOLOPAFPN(
         params,
-        params.in_dim,
+        params.in_channel,
         params.yolo_depth,
         params.yolo_width,
-        in_channels=params.in_channels,
-        act=params.yolo_act,
+        fpn_channels=params.fpn_channels,
+        act=params.act,
         depthwise=params.dwconv,
-        expand_ratio=params.expand_ratio,
+        expand_ratio=params.yolo_expand_ratio,
     )
     head = YOLOXHead(
         params,
-        params.num_classes,
-        in_channels=params.in_channels,
-        head_width=params.head_width,
-        yolo_width=params.yolo_width,
-        act=params.yolo_act,
-        depthwise=params.dwconv,
+        out_channel=params.out_channel,
+        head_width=params.yolo_head_width,
+        yolo_width=params.width,
+        fpn_channels=params.fpn_channels,
     )
     model = YOLOX(backbone, head)
 

@@ -197,8 +197,8 @@ if __name__ == "__main__":
             shutil.rmtree(args.tb_path)
         except:
             pass
-        args.expansion = 0.125
-        args.model_type = "yolo"
+        # args.model_type = "yolo"
+        args.model_type = "light"
         args.dataset_type = "train"
         args.learning_rate = 0.001
         args.train_batch_size = 8
@@ -206,19 +206,7 @@ if __name__ == "__main__":
         args.num_workers = 4
         args.num_epochs = 12
         args.eval_freq = 10000
-        args.major_metric = "average_precision"
-        args.yolo_depth = 0.125
-        args.yolo_width = 0.125
-        args.in_channels = [256, 512, 1024]
-        args.yolo_act = 'relu'
-        args.dwconv = False
-        args.expand_ratio = 0.5
-        args.fix_expand = False
-        args.is_BNC = False
-        args.upsample_type = 'bilinear'
-        args.num_classes = 1
-        args.head_width = 1.0
-        cacl_flop = 1
+        is_calc_flops = 1
 
     # 有新的字段，放在了默认的json里，需要读出来，以兼容之前的实验
     if "read existing default params.json":

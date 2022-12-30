@@ -103,13 +103,9 @@ def experiment():
         # param_pool_dict["train_batch_size"] = [8 * n_gpus]
         param_pool_dict["eval_batch_size"] = [128 * n_gpus]
         param_pool_dict["num_workers"] = [8 * n_gpus]
-        param_pool_dict["input_channels"] = [3]
-        # exp_1:  lr:0.01  r:2  bs:16  gpu:3_4_5_6
-        # exp_2:  lr:0.1  r:0.125  bs:8  gpu:1
-        # exp_3:  lr:0.01  r:0.125  bs:16  gpu:7
+        param_pool_dict["in_channel"] = [3]
 
-        device_used = ["3_4_5_6"]
-        # device_used = ['7']
+        device_used = ['7']
         # device_used = ['1']
         param_pool_dict["expansion"] = [2]
         # param_pool_dict['expansion'] = [0.125]

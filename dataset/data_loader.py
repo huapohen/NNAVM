@@ -29,7 +29,7 @@ class DatasetPipeline(Dataset):
             base_path = os.path.join(params.data_dir, set_name, self.mode)
             camera_f = os.path.join(base_path, 'generate', 'front')
             name_list = os.listdir(camera_f)
-            name_list = [ele.split('_')[0] for ele in name_list]
+            name_list = [ele.split('.')[0] for ele in name_list]
             name_list = list(set(name_list))
             percentage = int(len(name_list) * data_ratio[1])
             if params.enable_random and self.mode != "test":
@@ -58,7 +58,7 @@ class DatasetPipeline(Dataset):
                 base_path,
                 'generate',
                 camera,
-                f'{name}_{params.calc_homo_device}.{params.train_image_type}',
+                f'{name}.{params.train_image_type}',
             )
             img = Image.open(img_path)
             img = img.convert("RGB")
@@ -66,7 +66,7 @@ class DatasetPipeline(Dataset):
                 img = img.crop((27, 16, 27 + 1024, 16 + 320))
             else:
                 img = img.crop((119, 74, 119 + 1024, 74 + 320))
-            img_input = img.resize((params.img_w, params.img_h), Image.BILINEAR)
+            img_input = img.resize((params.img_w, params.img_h), Image.ANTIALIAS)
             img_fblr.append(ToTensor()(img_input))
             lab = cv2.imread(img_path)
             lab = cv2.cvtColor(lab, cv2.COLOR_BGR2RGB)
