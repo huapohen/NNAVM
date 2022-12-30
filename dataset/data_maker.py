@@ -497,9 +497,13 @@ class HomoTorchOP(nn.Module):
             A = torch.cat((M1, -M2), dim=-1)
             B = M3
             A_inv = torch.inverse(A)
+            # 矩阵乘 用 gpu算出来结果不对
+            # 转cpu
+            # 结果用当前device储存
+            mm = torch.matmul(A_inv.cpu(), B.cpu()).to(A)
             H = torch.cat(
                 (
-                    torch.matmul(A_inv, B).view(-1, 8),
+                    mm.view(-1, 8),
                     src_pt.new_ones((self.batch_size, 1)),
                 ),
                 1,
