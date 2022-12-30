@@ -3,6 +3,7 @@ import sys
 import thop
 import time
 import shutil
+import warnings
 import argparse
 import datetime
 import numpy as np
@@ -18,6 +19,9 @@ import model.net as net
 from common import utils
 from common.manager import Manager
 from evaluate import evaluate
+from loss.losses import *
+
+warnings.filterwarnings("ignore")
 
 
 def p(*arg, **kwargs):
@@ -72,21 +76,30 @@ def train(manager):
     if iter_max == 0:
         print("\t\t\t\t empty input")
         sys.exit()
+    # four vertex coordinates
+    bev_coords = get_coords(manager.params)
+    bev_ori_fblr = get_bev_ori(manager.params.train_batch_size)
+    bev_coords = bev_coords.cuda()
 
     with tqdm(total=iter_max) as t:
         for i, data_batch in enumerate(manager.dataloaders["train"]):
             # data_batch = utils.tensor_gpu(data_batch, params_gpu=manager.params.cuda)
             images = data_batch["image"].cuda()
-            labels = data_batch["label"].cuda()
+            labels = [lab.cuda() for lab in data_batch["label"]]
 
-            losses = {}
-            # with torch.cuda.amp.autocast(False):
-            with torch.cuda.amp.autocast(True):
-                output = manager.model(images)
-                losses["total"] = F.smooth_l1_loss(output, labels)
+            delta = manager.model(images)
+
+            losses = compute_losses(
+                manager.params,
+                delta,
+                labels,
+                bev_coords,
+                bev_ori_fblr,
+            )
 
             manager.optimizer.zero_grad()
-            losses["total"].backward()
+            with torch.autograd.set_detect_anomaly(True):
+                losses["total"].backward()
 
             manager.update_loss_status(loss=losses, split="train")
 
@@ -163,8 +176,8 @@ if __name__ == "__main__":
         # args.num_epochs = 610
 
     # 直接启动 train.py，从零开始训
-    # train_without_search_hyperparams = True
-    train_without_search_hyperparams = False
+    train_without_search_hyperparams = True
+    # train_without_search_hyperparams = False
     cacl_flop = 0
 
     if train_without_search_hyperparams == True:
@@ -173,7 +186,7 @@ if __name__ == "__main__":
         exp_name = "eeavm"
         args.exp_name = ""
         if "linux" in sys.platform:
-            args.data_dir = ""
+            args.data_dir = "/home/data/lwb/data/dybev"
         else:  # windows
             args.data_dir = [""]
         args.model_dir = f"experiments/{exp_name}/exp_{exp_id}"
@@ -188,12 +201,23 @@ if __name__ == "__main__":
         args.model_type = "yolo"
         args.dataset_type = "train"
         args.learning_rate = 0.001
-        args.train_batch_size = 64
+        args.train_batch_size = 8
         # args.num_workers = 12
-        args.num_workers = 8
+        args.num_workers = 4
         args.num_epochs = 12
         args.eval_freq = 10000
         args.major_metric = "average_precision"
+        args.yolo_depth = 0.125
+        args.yolo_width = 0.125
+        args.in_channels = [256, 512, 1024]
+        args.yolo_act = 'relu'
+        args.dwconv = False
+        args.expand_ratio = 0.5
+        args.fix_expand = False
+        args.is_BNC = False
+        args.upsample_type = 'bilinear'
+        args.num_classes = 1
+        args.head_width = 1.0
         cacl_flop = 1
 
     # 有新的字段，放在了默认的json里，需要读出来，以兼容之前的实验

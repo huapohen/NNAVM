@@ -5,9 +5,10 @@ dataset_maker/
 util/
 **/__pycache__/
 dataset/__pycache__/
-dataset/data/
-dataset/data/fev/
-dataset/data/bev/
-dataset/data/undist/
+dataset/data/*
+!dataset/data/bev/
+!dataset/data/fev/
+!dataset/data/undist/
 !dataset/data/detected_points.json
 !dataset/data/homo.json
+experiments/eeavm

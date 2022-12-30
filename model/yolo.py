@@ -1,6 +1,7 @@
 import torch
 import math
 from torch import nn
+import torch.nn.functional as F
 from model.utils import *
 from model.utils import CSPDarknet
 
@@ -126,13 +127,9 @@ class YOLOPAFPN(nn.Module):
         Returns:
             Tuple[Tensor]: FPN feature.
         """
-        if self.is_deploy:
-            input = input / 255.0
-
         #  backbone
         out_features = self.backbone(input)
-        features = [out_features[f] for f in self.in_features]
-        [x2, x1, x0] = features
+        [x2, x1, x0] = [out_features[f] for f in self.in_features]
 
         fpn_out0 = self.lateral_conv0(x0)  # 1024->512/32
         f_out0 = self.upsample(fpn_out0)  # 512/16
@@ -167,162 +164,23 @@ class YOLOXHead(nn.Module):
         act="silu",
         depthwise=False,
     ):
-        """
-        Args:
-            act (str): activation type of conv. Defalut value: "silu".
-            depthwise (bool): whether apply depthwise conv in conv branch. Defalut value: False.
-        """
         super().__init__()
-        self.params = params
-        self.n_anchors = 1
-        self.num_classes = num_classes
-        self.in_channels = in_channels
-        Conv = DWConv if depthwise else BaseConv
+        out_ch = params.perturbed_points * 2
 
-        self.cls_convs = nn.Sequential(
-            *[
-                Conv(
-                    in_channels=int(256 * head_width),
-                    out_channels=int(256 * head_width),
-                    ksize=3,
-                    stride=1,
-                    act=act,
-                ),
-                Conv(
-                    in_channels=int(256 * head_width),
-                    out_channels=int(256 * head_width),
-                    ksize=3,
-                    stride=1,
-                    act=act,
-                ),
-            ]
+        self.seq = nn.Sequential(
+            nn.Conv2d(int(in_channels[-1] * yolo_width), int(256 * head_width), 1),
+            nn.BatchNorm2d(int(256 * head_width)),
+            nn.ReLU(True),
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(int(256 * head_width), 2 * int(256 * head_width), 1),
+            nn.Conv2d(2 * int(256 * head_width), out_ch, 1),
+            nn.Flatten(1),
+            nn.Tanh(),
         )
-        self.reg_convs = nn.Sequential(
-            *[
-                Conv(
-                    in_channels=int(256 * head_width),
-                    out_channels=int(256 * head_width),
-                    ksize=3,
-                    stride=1,
-                    act=act,
-                ),
-                Conv(
-                    in_channels=int(256 * head_width),
-                    out_channels=int(256 * head_width),
-                    ksize=3,
-                    stride=1,
-                    act=act,
-                ),
-            ]
-        )
-        self.entryline_preds = nn.Conv2d(
-            in_channels=int(256 * head_width),
-            out_channels=2,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-        )
-        self.sepline_preds = nn.Conv2d(
-            in_channels=int(256 * head_width),
-            out_channels=2,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-        )
-        self.reg_preds = nn.Conv2d(
-            in_channels=int(256 * head_width),
-            out_channels=2,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-        )
-        self.obj_preds = nn.Conv2d(
-            in_channels=int(256 * head_width),
-            out_channels=1,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-        )
-        self.occ_preds = nn.Conv2d(
-            in_channels=int(256 * head_width),
-            out_channels=1,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-        )
-        self.stems = BaseConv(
-            in_channels=int(self.in_channels[-1] * yolo_width),
-            out_channels=int(256 * head_width),
-            ksize=1,
-            stride=1,
-            act=act,
-        )
-
-    def initialize_biases(self, prior_prob):
-
-        b = self.reg_preds.bias.view(self.n_anchors, -1)
-        b.data.fill_(-math.log((1 - prior_prob) / prior_prob))
-        self.reg_preds.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-
-        b = self.entryline_preds.bias.view(self.n_anchors, -1)
-        b.data.fill_(-math.log((1 - prior_prob) / prior_prob))
-        self.entryline_preds.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-
-        b = self.sepline_preds.bias.view(self.n_anchors, -1)
-        b.data.fill_(-math.log((1 - prior_prob) / prior_prob))
-        self.sepline_preds.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-
-        b = self.obj_preds.bias.view(self.n_anchors, -1)
-        b.data.fill_(-math.log((1 - prior_prob) / prior_prob))
-        self.obj_preds.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-
-        b = self.occ_preds.bias.view(self.n_anchors, -1)
-        b.data.fill_(-math.log((1 - prior_prob) / prior_prob))
-        self.occ_preds.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
     def forward(self, x):
-
-        x = self.stems(x)
-        cls_x = x
-        reg_x = x
-
-        cls_feat = self.cls_convs(cls_x)
-        entryline_output = self.entryline_preds(cls_feat)  # 2 channel
-        sepline_output = self.sepline_preds(cls_feat)  # 2 channel
-
-        reg_feat = self.reg_convs(reg_x)
-        position_output = self.reg_preds(reg_feat)  # 2 channel
-        confidence_output = self.obj_preds(reg_feat)  # 1 channel
-        occupied_output = self.occ_preds(reg_feat)  # 1 channel
-
-        if self.params.without_exp:
-            output = torch.cat(
-                [
-                    confidence_output,  # (0, 1)  confidence
-                    position_output,  # (0, 1)  offset x, y
-                    sepline_output,  # (-1, 1) sepline_x和y
-                    entryline_output,  # (-1, 1) entryline_x和y
-                    occupied_output,  # (0, 1)  occupied
-                ],
-                1,
-            )
-        else:
-            output = torch.cat(
-                [
-                    confidence_output.sigmoid(),  # (0, 1)  confidence
-                    position_output.sigmoid(),  # (0, 1)  offset x, y
-                    sepline_output.tanh(),  # (-1, 1) sepline_x和y
-                    entryline_output.tanh(),  # (-1, 1) entryline_x和y
-                    occupied_output.sigmoid(),  # (0, 1)  occupied
-                ],
-                1,
-            )
-
-        if self.params.is_BNC:
-            b, c, h, w = output.shape
-            output = output.reshape(b, c, -1).permute(0, 2, 1)
-
-        return output
+        y = self.seq(x)
+        return y
 
 
 def get_model(params):
@@ -344,7 +202,7 @@ def get_model(params):
     )
     head = YOLOXHead(
         params,
-        params.yolox_params['num_classes'],
+        params.num_classes,
         in_channels=params.in_channels,
         head_width=params.head_width,
         yolo_width=params.yolo_width,
@@ -354,5 +212,4 @@ def get_model(params):
     model = YOLOX(backbone, head)
 
     model.apply(init_yolo)
-    model.head.initialize_biases(1e-2)
     return model

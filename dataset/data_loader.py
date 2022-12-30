@@ -1,4 +1,5 @@
 import os
+import cv2
 import json
 import torch
 import random
@@ -7,11 +8,14 @@ from PIL import Image
 from torchvision import transforms as T
 from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader, Dataset
-from preprocess import *
+import warnings
+
+warnings.filterwarnings("ignore")
 
 
 class DatasetPipeline(Dataset):
     def __init__(self, params, mode="train"):
+        super().__init__()
         self.params = params
         self.mode = mode
         if mode == "train":
@@ -23,12 +27,10 @@ class DatasetPipeline(Dataset):
         for data_ratio in self.data_ratio:
             set_name = data_ratio[0]
             base_path = os.path.join(params.data_dir, set_name, self.mode)
-            name_list_path = os.path.join(base_path, "image_name.txt")
-            try:
-                with open(name_list_path, 'r') as f:
-                    name_list = f.readlines()
-            except:
-                raise f"Error! checkout dataset image_name.txt path: \n{name_list_path}"
+            camera_f = os.path.join(base_path, 'generate', 'front')
+            name_list = os.listdir(camera_f)
+            name_list = [ele.split('_')[0] for ele in name_list]
+            name_list = list(set(name_list))
             percentage = int(len(name_list) * data_ratio[1])
             if params.enable_random and self.mode != "test":
                 name_list = random.sample(name_list, percentage)
@@ -43,47 +45,35 @@ class DatasetPipeline(Dataset):
         return len(self.data_sample)
 
     def __getitem__(self, index):
+        '''
+        img_w: 512->1024,
+        img_h: 160->320,
+        wh_fblr = [(1078, 336), (1078, 336), (1172, 439), (1172, 439)]
+        '''
         params = self.params
-        # image
         base_path, name = self.data_sample[index]
-        img_path = os.path.join(base_path, "image", name, params.train_image_type)
-        try:
+        img_fblr, lab_fblr = [], []
+        for camera in ['front', 'back', 'left', 'right']:
+            img_path = os.path.join(
+                base_path,
+                'generate',
+                camera,
+                f'{name}_{params.calc_homo_device}.{params.train_image_type}',
+            )
             img = Image.open(img_path)
-        except:
-            raise f"Error! checkout dataset image path: \n{img_path}"
-        img = img.convert("L") if params.is_input_gray else img.convert("RGB")
-        img = img.resize((params.img_w, params.img_h), Image.BILINEAR)
-        # label
-        lab_path = lab_path.replace(base_path, "label", name, params.test_image_type)
-        try:
-            lab = Image.open(lab_path)
-        except:
-            raise f"Error! checkout dataset label path: \n{lab_path}"
-        lab = lab.convert("L") if params.is_input_gray else lab.convert("RGB")
-        lab = lab.resize((params.img_w, params.img_h), Image.BILINEAR)
-        # annotation
-        ## ann_path = lab_path.replace(base_path, "annotations.json")
-        ## with open(ann_path, 'r') as f:
-        ##     ann_json = json.load(f)
+            img = img.convert("RGB")
+            if camera in ['front', 'back']:
+                img = img.crop((27, 16, 27 + 1024, 16 + 320))
+            else:
+                img = img.crop((119, 74, 119 + 1024, 74 + 320))
+            img_input = img.resize((params.img_w, params.img_h), Image.BILINEAR)
+            img_fblr.append(ToTensor()(img_input))
+            lab = cv2.imread(img_path)
+            lab = cv2.cvtColor(lab, cv2.COLOR_BGR2RGB)
+            lab = np.transpose(lab, (2, 0, 1))
+            lab_fblr.append(torch.from_numpy(lab))
         # assemble
-        data = {
-            "image": img,
-            "label": lab,
-            "name": name,
-            "annotation": [],
-        }
-        # data augment
-        data = self.data_aug(data)
-        # to tensor
-        ## transform = T.Compose(
-        ##     [
-        ##         T.ToTensor(),
-        ##         T.Resize(params.img_h, params.img_w),
-        ##         T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ##     ]
-        ## )
-        data['image'] = ToTensor()(data['image'])
-        data['label'] = ToTensor()(data['label'])
+        data = {"image": img_fblr, "label": lab_fblr, "name": name, "path": base_path}
 
         return data
 
@@ -96,17 +86,21 @@ def collate_fn(batch):
     # image, label, name
     for key in batch[0].keys():
         batch_out[key] = []
-    # batch_out = {'image':[], 'label':[], 'name':[], "annotations":[]}
+    # batch_out = {'image':[], 'label':[], 'name':[], "path":[]}
 
     # batch_size = 32
     for x in batch:
         for k, v in x.items():
-            batch_out[k].append(v)
+            if k in ['image', 'label']:
+                batch_out[k].extend(v)
+            else:
+                batch_out[k].append(v)
     # batch_out = {'image':[from 1,2,3,..., to 32], ... }
     # [chw1, chw2, chw3, ..., chw32]
     for k, v in batch_out.items():
         # stack[] -> BCHW
-        if k in ["image", "label"]:
+        # if k in ["image", "label"]:
+        if k in ["image"]:
             batch_out[k] = torch.stack(v)
 
     return batch_out
