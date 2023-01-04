@@ -279,6 +279,7 @@ def get_warp_image(bs, homo, src):
         w, h = wh_fblr[i]
         grid = get_grid(bs, h, w, 0)
         h_this = homo[i::4]
+        h_this = torch.inverse(h_this)
         flow, vgrid = get_flow_vgrid(h_this, grid, h, w, 1)
         # src_this = src[i::4].unsqueeze(0).repeat(bs, 1, 1, 1)
         src_this = torch.stack(src[i::4])
