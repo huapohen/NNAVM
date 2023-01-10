@@ -24,14 +24,14 @@ def train_config(cfg):
     cfg.camera_list = ["front"]
     # cfg.camera_list = ["front", 'back']
     # cfg.camera_list = ["front", 'back', 'left', 'right']
-    cfg.exp_id = 8
+    cfg.exp_id = 1
     cfg.gpu_used = '2_5'
-    cfg.train_batch_size = 8
+    cfg.train_batch_size = 16
     cfg.num_epochs = 12
     cfg.train_data_ratio = [["v2", 1]]
     # cfg.model_train_type = "supervised"
     cfg.model_train_type = "unsupervised"
-    cfg.second_stage_image_supervised = True  # exp_8
+    # cfg.second_stage_image_supervised = True  # exp_8
     # cfg.bev_mask_mode = True # exp_9
     cfg.eval_freq = 1
     cfg.train_visualize_save = True

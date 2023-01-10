@@ -51,12 +51,9 @@ def second_stage(params, data):
     else:
         # Inference: the input fish-eye view is distorted, also as the undistored image
         data['H_undist2bev'] = dlt_homo(data["coords_undist"], data['coords_bev_ori'])
-        data['H_bev_gt2pt'] = dlt_homo(
-            data["coords_bev_ori"], data['coords_bev_perturbed_pred']
-        )
         # (1) undist_real = undist_pert @ H_u2b -> bev_pert
         # (2) bev_pert @ H_pt2gt -> bev_pred
-        # (1)+(2): undist_pert @ (H_u2b @ H_pt2gt) -> bev_pred
+        # (1)+(2): undist_pert @ (H_u2b @ H_pt2gt = Homo) -> bev_pred
         data['homo'] = data['H_undist2bev'] @ data['H_bev_pt2gt']
 
     # for train & test: undist_gt to bev_pert
