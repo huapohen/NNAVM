@@ -84,22 +84,22 @@ def train(manager):
     manager.model.train()
     params = manager.params
     params.visualize_mode = 'train'
-    
+
     iter_max = len(manager.dataloaders["train"])
     assert iter_max > 0, "\t\t\t\t empty input"
     params.iter_max = iter_max
-    
+
     with tqdm(total=iter_max) as t:
         for idx, data in enumerate(manager.dataloaders["train"]):
             params.current_iter = idx + 1
-            
+
             data = to_cuda(params, data)
 
             data['offset_pred'] = manager.model(data['image'])
             data = net.second_stage(params, data)
 
             losses = compute_losses(params, data)
-            
+
             manager.optimizer.zero_grad()
             with torch.autograd.set_detect_anomaly(False):
                 losses["total_loss"].backward()
@@ -117,7 +117,7 @@ def train(manager):
 
             t.set_description(desc=print_str)
             t.update()
-            
+
             # break
             # sys.exit()
 
@@ -139,7 +139,7 @@ def train_and_evaluate(manager):
         epoch_start = 0
     for epoch in range(epoch_start, manager.params.num_epochs):
         manager.params.current_epoch = epoch + 1
-        
+
         # evaluate the net
         if epoch != 0 and epoch % manager.params.eval_freq == 0:
             evaluate(manager)
@@ -152,7 +152,6 @@ def train_and_evaluate(manager):
 
     with open(os.path.join(manager.params.model_dir, "finish_flag.txt"), "w") as f:
         f.write("exp finish!")
-
 
 
 if __name__ == "__main__":
@@ -184,25 +183,24 @@ if __name__ == "__main__":
         dic_params = json.loads(json.dumps(cfg))
         obj_params = dictToObj(dic_params)
         model_json_path = os.path.join(obj_params.model_dir, "params.json")
-        if not os.path.exists(model_json_path):
-            default_json_path = os.path.join("experiments", "params.json")
-            params = utils.Params(default_json_path)
-        else:
-            params = utils.Params(model_json_path)
+        default_json_path = os.path.join("experiments", "params.json")
+        params = utils.Params(default_json_path)
+        params_model = utils.Params(model_json_path)
+        params.update(params_model.dict)
         params.update(obj_params)
         file_name = f"{params.exp_name}_exp_{params.exp_id}.json"
         extra_config_json_path = os.path.join("experiments", 'config')
         exp_json_path1 = os.path.join(params.model_dir, "params.json")
         exp_json_path2 = os.path.join(extra_config_json_path, file_name)
         # resume
-        if 'restore_file' not in dic_params:
+        if 'restore_file' not in obj_params:
             try:
                 shutil.rmtree(params.model_dir)
                 shutil.rmtree(params.tb_path)
                 os.remove(exp_json_path2)
             except:
                 pass
-    
+
     os.makedirs(params.model_dir, exist_ok=True)
     os.makedirs(params.tb_path, exist_ok=True)
     os.makedirs(extra_config_json_path, exist_ok=True)
@@ -210,7 +208,7 @@ if __name__ == "__main__":
     # Assign dataset
     if params.eval_freq < params.num_epochs:
         params.dataset_type = 'basic'
-        
+
     # Save params
     if 'restore_file' not in vars(params):
         params.save(exp_json_path1)

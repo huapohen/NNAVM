@@ -130,18 +130,18 @@ def run_all_exps(exp_id):
             args.exp_id = exp_id
         cfg = get_config(args, mode='test')
         dic_params = json.loads(json.dumps(cfg))
-        dic_params = dictToObj(dic_params)
-        params_default_path = os.path.join(dic_params.exp_root, 'params.json')
-        model_json_path = os.path.join(dic_params.model_dir, "params.json")
+        obj_params = dictToObj(dic_params)
+        params_default_path = os.path.join(obj_params.exp_root, 'params.json')
+        model_json_path = os.path.join(obj_params.model_dir, "params.json")
         assert os.path.isfile(
             model_json_path
         ), "No json configuration file found at {}".format(model_json_path)
         params = utils.Params(params_default_path)
         params_model = utils.Params(model_json_path)
         params.update(params_model.dict)
-        params.update(dic_params)
+        params.update(obj_params)
 
-    # Only load model weights
+    # Only load model weightsn
     params.only_weights = True
 
     # Use GPU if available
