@@ -182,11 +182,8 @@ if __name__ == "__main__":
         cfg = get_config(args, mode='train')
         dic_params = json.loads(json.dumps(cfg))
         obj_params = dictToObj(dic_params)
-        model_json_path = os.path.join(obj_params.model_dir, "params.json")
         default_json_path = os.path.join("experiments", "params.json")
         params = utils.Params(default_json_path)
-        params_model = utils.Params(model_json_path)
-        params.update(params_model.dict)
         params.update(obj_params)
         file_name = f"{params.exp_name}_exp_{params.exp_id}.json"
         extra_config_json_path = os.path.join("experiments", 'config')
@@ -200,6 +197,10 @@ if __name__ == "__main__":
                 os.remove(exp_json_path2)
             except:
                 pass
+        else:
+            model_json_path = os.path.join(obj_params.model_dir, "params.json")
+            params_model = utils.Params(model_json_path)
+            params.update(params_model.dict)
 
     os.makedirs(params.model_dir, exist_ok=True)
     os.makedirs(params.tb_path, exist_ok=True)
