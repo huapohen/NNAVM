@@ -1,11 +1,11 @@
 """Peform hyperparemeters search"""
-
-import argparse
-import collections
-import itertools
+# -*- coding: utf-8 -*-
 import os
 import sys
 import shutil
+import argparse
+import itertools
+import collections
 
 from common import utils
 from experiment_dispatcher import dispatcher, tmux
@@ -90,34 +90,30 @@ def experiment():
 
     if args.id == 1:
         exp_name = "eeavm"
-        start_id = 1
+        start_id = exp_id = 2
         session_name = f"{start_id}"
         param_pool_dict = collections.OrderedDict()
         device_used = collections.OrderedDict()
         n_gpus = 1
         if "linux" in sys.platform:
-            param_pool_dict["data_dir"] = [""]
+            param_pool_dict["data_dir"] = ["/home/data/lwb/data/dybev"]
         else:  # windows
             param_pool_dict["data_dir"] = [""]
         param_pool_dict["train_batch_size"] = [16 * n_gpus]
-        # param_pool_dict["train_batch_size"] = [8 * n_gpus]
         param_pool_dict["eval_batch_size"] = [128 * n_gpus]
         param_pool_dict["num_workers"] = [8 * n_gpus]
-        param_pool_dict["in_channel"] = [3]
-
-        device_used = ['7']
-        # device_used = ['1']
-        param_pool_dict["expansion"] = [2]
-        # param_pool_dict['expansion'] = [0.125]
-        param_pool_dict["learning_rate"] = [0.01]
-        # param_pool_dict["learning_rate"] = [0.1]
-        param_pool_dict["model_type"] = ["yolo"]
+        device_used = ['6']
+        param_pool_dict["camera_list"] = [['front']]
+        # param_pool_dict["camera_list"] = [['front', "back", "left", "right"]]
+        param_pool_dict["model_type"] = ["light"]
+        param_pool_dict["channel_ratio"] = [0.125]
+        param_pool_dict["learning_rate"] = [0.001]
         param_pool_dict["dataset_type"] = ["train"]
-        param_pool_dict["train_data_ratio"] = [[["PTS", 1]]]
-        param_pool_dict["val_data_ratio"] = [[["PTS", 0.1]]]
-        param_pool_dict["save_every_epoch"] = [False]
+        param_pool_dict["train_data_ratio"] = [[["v2", 1]]]
+        param_pool_dict["val_data_ratio"] = [[["v2", 0.1]]]
         param_pool_dict["eval_freq"] = [10000]
         param_pool_dict["num_epochs"] = [36]
+
         # '0', '1', '2', '3', '4', '5', '6', '7'
         # device_used = ['6']
         # device_used = ['0', '0']

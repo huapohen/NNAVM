@@ -1,13 +1,18 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
+import json
 import thop
 import time
+import ipdb
 import shutil
 import warnings
 import argparse
 import datetime
 import numpy as np
 from tqdm import tqdm
+from ipdb import set_trace
+from easydict import EasyDict
 
 import torch
 import torch.optim as optim
@@ -19,9 +24,15 @@ import model.net as net
 from common import utils
 from common.manager import Manager
 from evaluate import evaluate
-from loss.losses import *
+from loss.losses import compute_losses
+from util.preprocess import to_cuda
+from util.postprocess import visulize_results
+from parameters import get_config, dictToObj
 
 warnings.filterwarnings("ignore")
+
+''' add this line, because GTX30 serials' default torch.matmul() on cuda is uncorrected '''
+torch.backends.cuda.matmul.allow_tf32 = False
 
 
 def p(*arg, **kwargs):
@@ -31,8 +42,9 @@ def p(*arg, **kwargs):
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--params_path", type=str, default=None, help="params file")
 parser.add_argument(
-    "--model_dir", default="default", help="Directory containing params.json"
+    "--model_dir", type=str, default=None, help="Directory containing params.json"
 )
 parser.add_argument(
     "--restore_file",
@@ -50,56 +62,47 @@ parser.add_argument(
     "-gu",
     "--gpu_used",
     type=str,
-    default="default",
+    default=None,
     help="select the gpu for train or evaluation.",
 )
 parser.add_argument(
-    "-exp", "--exp_name", type=str, default="default", help="experiment name."
+    "-exp", "--exp_name", type=str, default=None, help="experiment name."
 )
 parser.add_argument(
     "-tb",
     "--tb_path",
     type=str,
-    default="default",
+    default=None,
     help="the path to save the tensorboardx log.",
 )
 
 
 def train(manager):
-
     manager.reset_loss_status()
 
     torch.cuda.empty_cache()
     manager.model.train()
-
+    params = manager.params
+    params.visualize_mode = 'train'
+    
     iter_max = len(manager.dataloaders["train"])
-    if iter_max == 0:
-        print("\t\t\t\t empty input")
-        sys.exit()
-    # four vertex coordinates
-    bev_coords = get_coords(manager.params)
-    bev_ori_fblr = get_bev_ori(manager.params.train_batch_size)
-    bev_coords = bev_coords.cuda()
-
+    assert iter_max > 0, "\t\t\t\t empty input"
+    params.iter_max = iter_max
+    
     with tqdm(total=iter_max) as t:
-        for i, data_batch in enumerate(manager.dataloaders["train"]):
-            # data_batch = utils.tensor_gpu(data_batch, params_gpu=manager.params.cuda)
-            images = data_batch["image"].cuda()
-            labels = [lab.cuda() for lab in data_batch["label"]]
+        for idx, data in enumerate(manager.dataloaders["train"]):
+            params.current_iter = idx + 1
+            
+            data = to_cuda(params, data)
 
-            delta = manager.model(images)
+            data['offset_pred'] = manager.model(data['image'])
+            data = net.second_stage(params, data)
 
-            losses = compute_losses(
-                manager.params,
-                delta,
-                labels,
-                bev_coords,
-                bev_ori_fblr,
-            )
-
+            losses = compute_losses(params, data)
+            
             manager.optimizer.zero_grad()
-            with torch.autograd.set_detect_anomaly(True):
-                losses["total"].backward()
+            with torch.autograd.set_detect_anomaly(False):
+                losses["total_loss"].backward()
 
             manager.update_loss_status(loss=losses, split="train")
 
@@ -107,11 +110,14 @@ def train(manager):
 
             manager.update_step()
 
+            if params.train_visualize_save:
+                visulize_results(params, data)
+
             print_str = manager.print_train_info()
 
             t.set_description(desc=print_str)
             t.update()
-
+            
             # break
             # sys.exit()
 
@@ -132,18 +138,14 @@ def train_and_evaluate(manager):
     if not isinstance(epoch_start, int):
         epoch_start = 0
     for epoch in range(epoch_start, manager.params.num_epochs):
-
-        # evaluate the model
-        # eval处理loss，batch内部取的1
+        manager.params.current_epoch = epoch + 1
+        
+        # evaluate the net
         if epoch != 0 and epoch % manager.params.eval_freq == 0:
             evaluate(manager)
 
         # Save latest model, or best model weights accroding to the params.major_metric
         manager.check_best_save_last_checkpoints(latest_freq=1)
-
-        # for finetune
-        if epoch == 1600:
-            sys.exit()
 
         # compute number of batches in one epoch (one full pass over the training set)
         train(manager)
@@ -152,90 +154,67 @@ def train_and_evaluate(manager):
         f.write("exp finish!")
 
 
+
 if __name__ == "__main__":
-    """
-    python train.py --gpu_used 0 --model_dir experiments/rs/exp_1 --exp_name rs_exp_1 --tb_path experiments/rs/tf_log/
-    """
-    # Load the parameters from json file
+
     args = parser.parse_args()
 
-    # is_continue_training = True
-    is_continue_training = False
-    if is_continue_training:
-        exp_id = 1
-        args.gpu_used = "0"
-        exp_name = "eeavm"
-        args.model_dir = os.path.join("experiments", exp_name, f"exp_{exp_id}")
-        args.tb_path = os.path.join("experiments", exp_name, "tf_log")
-        # args.restore_file = 'yolors_model_latest.pth'
-        # args.only_weights = False
-        # args.restore_file = '1.pth'
-        # args.only_weights = True
-        # args.learning_rate = 5e-7
-        # args.learning_rate_new = True
-        # args.num_epochs = 610
-
-    # 直接启动 train.py，从零开始训
-    train_without_search_hyperparams = True
-    # train_without_search_hyperparams = False
-    cacl_flop = 0
-
-    if train_without_search_hyperparams == True:
-        exp_id = 1
-        args.gpu_used = "1"
-        exp_name = "eeavm"
-        args.exp_name = ""
-        if "linux" in sys.platform:
-            args.data_dir = "/home/data/lwb/data/dybev"
-        else:  # windows
-            args.data_dir = [""]
-        args.model_dir = f"experiments/{exp_name}/exp_{exp_id}"
-        args.tb_path = f"experiments/{exp_name}/tf_log/"
-        args.tb_path += f"{exp_name}_exp_{exp_id}"
+    if args.params_path is not None and args.restore_file is None:
+        # run train by DIY in designated diy_params.json
+        '''python train.py --params diy_param_json_path'''
+        params = utils.Params(args.params_path)
+        exp_dir = os.path.join(params.exp_root, params.exp_name)
+        params.model_dir = os.path.join(exp_dir, f"exp_{params.exp_id}")
+        params.tb_path = os.path.join(exp_dir, 'tf_log', f'exp_{params.exp_id}')
+    elif args.gpu_used is not None:
+        # run train.py through search_hyperparams.py
+        default_json_path = os.path.join("experiments", "params.json")
+        params = utils.Params(default_json_path)
         try:
             shutil.rmtree(args.model_dir)
             shutil.rmtree(args.tb_path)
         except:
             pass
-        # args.model_type = "yolo"
-        args.model_type = "light"
-        args.dataset_type = "train"
-        args.learning_rate = 0.001
-        args.train_batch_size = 8
-        # args.num_workers = 12
-        args.num_workers = 4
-        args.num_epochs = 12
-        args.eval_freq = 10000
-        is_calc_flops = 1
-
-    # 有新的字段，放在了默认的json里，需要读出来，以兼容之前的实验
-    if "read existing default params.json":
-        default_json_path = os.path.join("experiments", "params.json")
-        params = utils.Params(default_json_path)
-
-        # 读之前的实验 json
-        json_path = os.path.join(args.model_dir, "params.json")
-        if os.path.exists(json_path):
-            model_params_dict = utils.Params(json_path).dict
-            # 实验json覆盖默认json
-            params.update(model_params_dict)
+        model_json_path = os.path.join(args.model_dir, "params.json")
+        model_params_dict = utils.Params(model_json_path).dict
+        params.update(model_params_dict)
+    else:
+        # run by python train.py
+        cfg = get_config(args, mode='train')
+        dic_params = json.loads(json.dumps(cfg))
+        obj_params = dictToObj(dic_params)
+        model_json_path = os.path.join(obj_params.model_dir, "params.json")
+        if not os.path.exists(model_json_path):
+            default_json_path = os.path.join("experiments", "params.json")
+            params = utils.Params(default_json_path)
         else:
-            os.makedirs(args.model_dir, exist_ok=True)
-            params.save(os.path.join(args.model_dir, "params.json"))
+            params = utils.Params(model_json_path)
+        params.update(obj_params)
+        file_name = f"{params.exp_name}_exp_{params.exp_id}.json"
+        extra_config_json_path = os.path.join("experiments", 'config')
+        exp_json_path1 = os.path.join(params.model_dir, "params.json")
+        exp_json_path2 = os.path.join(extra_config_json_path, file_name)
+        # resume
+        if 'restore_file' not in dic_params:
+            try:
+                shutil.rmtree(params.model_dir)
+                shutil.rmtree(params.tb_path)
+                os.remove(exp_json_path2)
+            except:
+                pass
+    
+    os.makedirs(params.model_dir, exist_ok=True)
+    os.makedirs(params.tb_path, exist_ok=True)
+    os.makedirs(extra_config_json_path, exist_ok=True)
 
-    # 通过 search_hyperparams.py 启用 train.py
-    if train_without_search_hyperparams == False and is_continue_training == False:
-        json_path = os.path.join(args.model_dir, "params.json")
-        assert os.path.isfile(
-            json_path
-        ), "No json configuration file found at {}".format(json_path)
-        params = utils.Params(json_path)
-
-    # Update args into params
-    # 把这里args手动定义的参数更新到manager.params里
-    params.update(vars(args))
-    if train_without_search_hyperparams:
-        params.save(os.path.join(args.model_dir, "params.json"))
+    # Assign dataset
+    if params.eval_freq < params.num_epochs:
+        params.dataset_type = 'basic'
+        
+    # Save params
+    if 'restore_file' not in vars(params):
+        params.save(exp_json_path1)
+        params.save(exp_json_path2)
 
     # Set the logger
     logger = utils.set_logger(os.path.join(params.model_dir, "train.log"))
@@ -257,12 +236,12 @@ if __name__ == "__main__":
     if params.cuda:
         torch.cuda.manual_seed(params.seed)
 
-    # model
+    # init model
     model = net.fetch_net(params)
 
     # flop, parameters
     if params.is_calc_flops:
-        input = torch.randn(1, params.input_channels, params.img_h, params.img_w)
+        input = torch.randn(1, params.in_channel, params.img_h, params.img_w)
         flops, parameters = thop.profile(model, inputs=(input,), verbose=False)
         model.eval()
         output = model(input)
@@ -275,7 +254,6 @@ if __name__ == "__main__":
                             Params: {parameters / 1e6:.1f} M
                             {split_line}"""
         logger.info(prt_model_info)
-        sys.exit()
 
     # set gpu-mode
     if params.cuda:
@@ -292,12 +270,21 @@ if __name__ == "__main__":
         optimizer, step_size=params.step_size, gamma=params.gamma
     )
 
-    # Create the input data pipeline
     logger.info("Loading the train datasets from {}".format(params.data_dir))
+
     # fetch dataloaders
     dataloaders = data_loader.fetch_dataloader(params)
 
-    # initial status for checkpoint manager
+    # Dataset information
+    sample_info = dataloaders['train'].sample_number
+    ds_stats = ""
+    for k, v in sample_info.items():
+        if k != 'total_samples':
+            ds_stats += f" {k}  r={v['ratio']} n={v['samples']}\t"
+    logger.info(f"dataset: {ds_stats}")
+    logger.info(f"total samples: {sample_info['total_samples']}")
+
+    # Initial status for checkpoint manager
     assert params.metric_mode in ["ascend", "descend"]
     manager = Manager(
         model=model,
@@ -307,9 +294,13 @@ if __name__ == "__main__":
         dataloaders=dataloaders,
         writer=None,
         logger=logger,
-        exp_name=args.exp_name,
-        tb_path=args.tb_path,
+        exp_name=params.exp_name,
+        tb_path=params.tb_path,
     )
+
+    # Continue training
+    if 'restore_file' in vars(params):
+        manager.load_checkpoints()
 
     # Train the model
     logger.info("Starting training for {} epoch(s)".format(params.num_epochs))

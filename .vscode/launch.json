@@ -8,8 +8,14 @@
             "type": "python",
             "request": "launch",
             "name": "python: current file",
-            "program": "${file}",
-            "console": "integratedTerminal"
+            // "program": "${file}",
+            // "program": "train.py",
+            "program": "evaluate.py",
+            // "program": "search_hyperparams.py",
+            // "program": "dataset/data_loader.py",
+            // "program": "dataset/data_set.py",
+            // "program": "dataset/data_maker.py",
+            "console": "integratedTerminal",
         }
     ]
 }

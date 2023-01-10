@@ -43,8 +43,7 @@ class Manager():
         self.cur_test_score = 0
 
         # tf_board handlle
-        self.writer = SummaryWriter(tb_path +
-                                    exp_name) if exp_name is not None else None
+        self.writer = SummaryWriter(tb_path) if exp_name is not None else None
         # train status
         self.train_status = defaultdict(utils.AverageMeter)
 

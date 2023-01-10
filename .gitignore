@@ -2,7 +2,6 @@
 avm_reference/
 dataset_ref/
 dataset_maker/
-util/
 **/__pycache__/
 dataset/__pycache__/
 dataset/data/*
@@ -12,3 +11,4 @@ dataset/data/*
 !dataset/data/detected_points.json
 !dataset/data/homo.json
 experiments/eeavm
+experiments/config/*

@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 from PIL import Image
+from easydict import EasyDict
 from itertools import permutations
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "6"
@@ -37,8 +38,8 @@ class DataMakerTorch(nn.Module):
         self.offset_pix_range = 10
         self.perturb_mode = 'random'
         # the idx=0 image don't perturb, and the idx=1 to idx=1000 images are perturbed
-        self.train_img_num = 1001
-        self.test_img_num = 201
+        self.train_img_num = 5001
+        self.test_img_num = 501
         version = 'v1'
         self.method = 'Axb'
         self.dst_wh_fblr = [(1078, 336), (1078, 336), (1172, 439), (1172, 439)]
@@ -175,6 +176,8 @@ class DataMakerTorch(nn.Module):
         )
         shutil.copy('dataset/data/homo.json', f'{self.dataset_dir_mode}/homo.json')
         shutil.copytree('dataset/data/bev', f'{self.dataset_dir_mode}/bev')
+        shutil.copytree('dataset/data/undist', f'{self.dataset_dir_mode}/undist')
+        shutil.copytree('dataset/data/fev', f'{self.dataset_dir_mode}/fev')
 
     def read_image_fblr(self):
         img_fblr = {}
@@ -214,9 +217,13 @@ class DataMakerTorch(nn.Module):
 
 
 class DataMakerCV2:
-    def __init__(self):
+    def __init__(self, args=None):
         self.base_path = os.path.join(os.getcwd(), "dataset/data")
-        fish = {"scale": 0.5, "width": 1280, "height": 960}
+        scale = 0.5
+        if args is not None:
+            if args.mode == 'test':
+                scale = args.scale
+        fish = {"scale": scale, "width": 1280, "height": 960}
         hardware = {"focal_length": 950, "dx": 3, "dy": 3, "cx": 640, "cy": 480}
         distort = {
             "Opencv_k0": 0.117639891128,
@@ -271,6 +278,41 @@ class DataMakerCV2:
             pow(intrinsic_undis[0][2] / intrinsic[0][0], 2)
             + pow(intrinsic_undis[1][2] / intrinsic[1][1], 2)
         )
+
+    def get_grids(self, h, w):
+        grids = np.meshgrid(np.arange(w), np.arange(h))
+        grids = np.stack(grids, axis=2).astype(np.float32)
+        return grids
+
+    def get_correct_table(self):
+        undist_center = np.array([self.undist_w / 2, self.undist_h / 2]).reshape(
+            1, 1, 2
+        )
+        dist_center = np.array([self.center_w, self.center_h]).reshape(1, 1, 2)
+        f = np.array([self.intrinsic[0][0], self.intrinsic[1][1]]).reshape(1, 1, 2)
+
+        grids = self.get_grids(self.undist_h, self.undist_w)
+        grids = grids - undist_center
+        grids_norm = grids / f
+        r_undist = np.linalg.norm(grids_norm, axis=2)
+        angle_undistorted = np.arctan(r_undist)
+        angle_undistorted_p2 = angle_undistorted * angle_undistorted
+        angle_undistorted_p3 = angle_undistorted_p2 * angle_undistorted
+        angle_undistorted_p5 = angle_undistorted_p2 * angle_undistorted_p3
+        angle_undistorted_p7 = angle_undistorted_p2 * angle_undistorted_p5
+        angle_undistorted_p9 = angle_undistorted_p2 * angle_undistorted_p7
+        r_distort = (
+            angle_undistorted
+            + self.distort['Opencv_k0'] * angle_undistorted_p3
+            + self.distort['Opencv_k1'] * angle_undistorted_p5
+            + self.distort['Opencv_k2'] * angle_undistorted_p7
+            + self.distort['Opencv_k3'] * angle_undistorted_p9
+        )
+        scale = r_distort / (r_undist + 0.00001)
+        scale = scale[..., np.newaxis]
+        grids = grids * scale + dist_center
+
+        return grids.astype(np.float32)
 
     def calc_angle_undistorted(self, r_):
         angle_undistorted = math.atan(r_)
@@ -723,7 +765,21 @@ if __name__ == "__main__":
     test_mode = "torch"
 
     if test_mode == "cv2":
-        datamaker = DataMakerCV2()
+        test_fev2undist = True
+        # test_fev2undist = False
+        if test_fev2undist:
+            args = EasyDict(dict(scale=1.0, mode='test'))
+            datamaker = DataMakerCV2(args)
+            grids = datamaker.get_correct_table()
+            img = cv2.imread("dataset_maker/fev/back.png")
+            img_undis = cv2.remap(
+                img, grids[:, :, 0], grids[:, :, 1], interpolation=cv2.INTER_LINEAR
+            )
+            cv2.imwrite("dataset_maker/undist.jpg", img_undis)
+        else:
+            args = None
+
+        datamaker = DataMakerCV2(args)
 
         mode = "fev2bev"
         # mode = 'fev2undist'

@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
-import argparse
-import logging
-import platform
 import os
 import cv2
 import sys
 import json
 import thop
 import shutil
+import logging
+import warnings
 import datetime
-from tqdm import tqdm
-
+import argparse
+import platform
 import numpy as np
+from tqdm import tqdm
+from ipdb import set_trace
+from easydict import EasyDict
+
 import torch
 from torch.autograd import Variable
 
@@ -20,30 +23,22 @@ import model.net as net
 
 from common import utils
 from common.manager import Manager
-from loss.losses import *
-from dataset.postprocess import *
+from loss.losses import compute_losses
+from loss.benchmark import benchmark_indicator
+from util.preprocess import to_cuda
+from util.postprocess import visulize_results
+from parameters import get_config, dictToObj
+
+warnings.filterwarnings("ignore")
+
+''' add this line, because GTX30 serials' default torch.matmul() on cuda is uncorrected '''
+torch.backends.cuda.matmul.allow_tf32 = False
+
 
 result_all_exps = {}
 
 parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--model_dir",
-    default="experiments/rs/exp_3",
-    help="Directory containing params.json",
-)
-parser.add_argument(
-    "--restore_file",
-    # default='yolors_test_model_best.pth',
-    default="yolors_model_latest.pth",
-    help="name of the file in --model_dir containing weights to load",
-)
-parser.add_argument(
-    "-gu",
-    "--gpu_used",
-    type=str,
-    default="0",
-    help="select the gpu for train or evaluation.",
-)
+parser.add_argument("--params_path", type=str, default=None, help="params file")
 
 
 def evaluate(manager):
@@ -53,57 +48,59 @@ def evaluate(manager):
         model: (torch.nn.Module) the neural network
         manager: a class instance that contains objects related to train and evaluate.
     """
-    print("==============eval begin==============")
+    print("============== eval begin ==============")
 
     # loss status and eval status initial
     manager.reset_loss_status()
     manager.reset_metric_status("test")
     manager.model.eval()
+    params = manager.params
+    model_train_type = params.model_train_type
+    params.visualize_mode = 'evaluate'
+
+    Metric = EasyDict(
+        {"total_loss": [], 'homing_point_ratio': [], 'mean_pixel_err': [], 'psnr': []}
+    )
 
     with torch.no_grad():
-        # compute metrics over the dataset
-
-        total_loss = []
 
         iter_max = len(manager.dataloaders["test"])
-        ds_stats = ""
-        for ds in manager.params.test_data_save:
-            ds_stats += ds[0] + " "
-        print(f"save_img: {manager.params.test_data_save}  " + f"dataset: {ds_stats}")
-        manager.logger.info(f"dataset: {ds_stats} {manager.params.eval_dataset}")
 
         with tqdm(total=iter_max) as t:
-            for idx, data_batch in enumerate(manager.dataloaders["test"]):
-                images = data_batch["image"].cuda()
-                labels = data_batch["label"].cuda()
-                names = data_batch["name"]
+            for idx, data in enumerate(manager.dataloaders["test"]):
+                params.current_iter = idx + 1
 
-                output = manager.model(images)
-                loss = {}
-                loss["total"] = F.mse_loss(output, labels)
-                total_loss.append(loss["total"].item())
+                data = to_cuda(params, data)
 
-                if manager.params.test_data_save:
-                    visulize_results(
-                        manager.params, images, names, output, idx,
-                    )
+                data['offset_pred'] = manager.model(data['image'])
+                data = net.second_stage(params, data)
+
+                losses = compute_losses(params, data)
+                indicator = benchmark_indicator(params, data)
+
+                Metric = gather_metric(Metric, losses, indicator)
+
+                if params.eval_visualize_save:
+                    visulize_results(params, data)
+                    if idx > 15:
+                        sys.exit()
 
                 t.update()
 
-        total_loss = np.mean(total_loss) if len(total_loss) else 0.0
+        Metric = statistic_metric(Metric)
 
-        Metric = {"total_loss": total_loss}
-
-        # result_all_exps[manager.params.exp_id] = Metric
+        # result_all_exps[params.exp_id] = Metric
 
         manager.update_metric_status(
-            metrics=Metric, split="test", batch_size=manager.params.eval_batch_size,
+            metrics=Metric,
+            split="test",
+            batch_size=params.eval_batch_size,
         )
 
         # update data to logger
         manager.logger.info(
             "Loss/valid epoch_{} {}: "
-            "total_loss: {:.6f} | ".format("test", manager.epoch_val, total_loss)
+            "total_loss: {:.6f} | ".format("test", manager.epoch_val, Metric.total_loss)
         )
 
         # For each epoch, print the metric
@@ -113,47 +110,39 @@ def evaluate(manager):
         manager.model.train()
 
 
-def run_all_exps(eid, val_data_save):
+def run_all_exps(exp_id):
     """
     Evaluate the model on the test set.
     """
     # Load the parameters
     args = parser.parse_args()
 
-    if "linux" in sys.platform:
-        args.data_dir = ""
-    else:  # windows
-        args.data_dir = [""]
-    base_path = os.path.join(os.getcwd(), "experiments", "eeavm")
-    args.exp_id = eid
-    args.exp_id = 1
-    args.model_dir = os.path.join(base_path, f"exp_{args.exp_id}")
-    # args.restore_file = 'eeavm_test_model_best.pth'
-    args.restore_file = "eeavm_model_latest.pth"
-    args.restore_file = "82.pth"
-    args.eval_batch_size = 8
-    args.gpu_used = "2"
-    args.num_workers_eval = 1
-    args.dataset_type = "test"
-    args.eval_dataset = "PTS"
-    args.test_data_ratio = [["PTS", 0.01]]
-    args.val_data_save = val_data_save
-
-    # merge params
-    default_json_path = os.path.join("experiments", "params.json")
-    params = utils.Params(default_json_path)
-    json_path = os.path.join(args.model_dir, "params.json")
-    assert os.path.isfile(json_path), "No json configuration file found at {}".format(
-        json_path
-    )
-    model_params_dict = utils.Params(json_path).dict
-    params.update(model_params_dict)
+    if args.params_path is not None and args.restore_file is None:
+        # run test by DIY in designated diy_params.json
+        '''python evaluate.py --params diy_param_json_path'''
+        params = utils.Params(args.params_path)
+        exp_dir = os.path.join(params.exp_root, params.exp_name)
+        params.model_dir = os.path.join(exp_dir, f"exp_{params.exp_id}")
+        params.tb_path = os.path.join(exp_dir, 'tf_log', f'exp_{params.exp_id}')
+    else:
+        # run by python train.py
+        if exp_id is not None:
+            args.exp_id = exp_id
+        cfg = get_config(args, mode='test')
+        dic_params = json.loads(json.dumps(cfg))
+        dic_params = dictToObj(dic_params)
+        params_default_path = os.path.join(dic_params.exp_root, 'params.json')
+        model_json_path = os.path.join(dic_params.model_dir, "params.json")
+        assert os.path.isfile(
+            model_json_path
+        ), "No json configuration file found at {}".format(model_json_path)
+        params = utils.Params(params_default_path)
+        params_model = utils.Params(model_json_path)
+        params.update(params_model.dict)
+        params.update(dic_params)
 
     # Only load model weights
     params.only_weights = True
-
-    # Update args into params
-    params.update(vars(args))
 
     # Use GPU if available
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -166,17 +155,28 @@ def run_all_exps(eid, val_data_save):
         torch.cuda.manual_seed(params.seed)
 
     # Get the logger
-    logger = utils.set_logger(os.path.join(args.model_dir, "evaluate.log"))
+    logger = utils.set_logger(os.path.join(params.model_dir, "evaluate.log"))
 
-    # Create the input data pipeline
-    logging.info(f"Creating the dataset {args.eval_dataset}")
+    logger.info("Loading the train datasets from {}".format(params.data_dir))
 
     # Fetch dataloaders
     dataloaders = data_loader.fetch_dataloader(params)
 
-    # # flop, parameters
-    input = torch.randn(1, params.input_channels, params.img_h, params.img_w)
-    model = net.get_model(params)
+    # Dataset information
+    sample_info = dataloaders['test'].sample_number
+    ds_stats = ""
+    for k, v in sample_info.items():
+        if k != 'total_samples':
+            ds_stats += f" {k}  r={v['ratio']} n={v['samples']}\t"
+    logger.info(f"save_img: {params.eval_visualize_save}")
+    logger.info(f"dataset: {ds_stats}")
+    logger.info(f"total samples: {sample_info['total_samples']}")
+
+    # model
+    model = net.fetch_net(params)
+
+    # flop, parameters
+    input = torch.randn(1, params.in_channel, params.img_h, params.img_w)
     flops, parameters = thop.profile(model, inputs=(input,), verbose=False)
     model.eval()
     output = model(input)
@@ -191,13 +191,15 @@ def run_all_exps(eid, val_data_save):
     logger.info(prt_model_info)
     logger.info(f"exp_id: {params.exp_id}")
 
-    # Define the model and optimizer
+    # Define the model and gpu
     if params.cuda:
-        model = net.get_model(params).cuda()
+        model = net.fetch_net(params).cuda()
+        # gpu_num = len(params.gpu_used.split(","))
+        # device_ids = range(gpu_num)
         device_ids = range(torch.cuda.device_count())
         model = torch.nn.DataParallel(model, device_ids)
     else:
-        model = net.get_model(params)
+        model = net.fetch_net(params)
 
     # Initial status for checkpoint manager
     manager = Manager(
@@ -223,9 +225,23 @@ def run_all_exps(eid, val_data_save):
     evaluate(manager)
 
 
+def gather_metric(Metric, losses, indicator):
+    for ele in [losses, indicator]:
+        for k, v in ele.items():
+            Metric[k].append(v.item())
+    return Metric
+
+
+def statistic_metric(Metric, mode='mean'):
+    if mode == 'mean':
+        for k, v in Metric.items():
+            Metric[k] = np.mean(v)
+    return Metric
+
+
 if __name__ == "__main__":
 
-    # val_data_save = False
-    val_data_save = True
-    for i in range(0, 1):
-        run_all_exps(0, val_data_save)
+    # for i in range(5, 10):
+    #     run_all_exps(i)
+    run_all_exps(exp_id=None)
+    # run_all_exps(exp_id=1)

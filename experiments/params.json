@@ -1,22 +1,52 @@
 {
-    "data_dir": "/home/data/lwb/data/dybev",
+    "exp_root": "./experiments",
+    "exp_id": 1,
+    "exp_name": "eeavm",
+    "model_dir": "experiments/eeavm/exp_1",
+    "tb_path": "experiments/eeavm/tf_log/",
+    "data_dir": "/home/data/lwb/data/dybev/",
     "train_data_ratio": [
         [
-            "v1",
+            "v2",
             1
         ]
     ],
     "test_data_ratio": [
         [
-            "v1",
+            "v2",
             1
         ]
     ],
-    "eval_dataset": "v1",
     "enable_random": true,
     "img_w": 512,
     "img_h": 160,
-    "in_channel": 3,
+    "wh_bev_fblr": {
+        "front": [
+            1078,
+            336
+        ],
+        "back": [
+            1078,
+            336
+        ],
+        "left": [
+            1172,
+            439
+        ],
+        "right": [
+            1172,
+            439
+        ]
+    },
+    "dw_fblr": {
+        "fb": 27,
+        "lr": 74
+    },
+    "dh_fblr": {
+        "fb": 16,
+        "lr": 119
+    },
+    "in_channel": 1,
     "out_channel": 8,
     "fpn_channels": [
         256,
@@ -24,23 +54,22 @@
         1024
     ],
     "act": "relu",
-    "test_data_save": false,
     "save_every_epoch": false,
-    "dataset_type": "basic",
+    "dataset_type": "train",
     "net_type": "eeavm",
     "model_type": "light",
     "loss_type": "basic",
     "seed": 1,
-    "major_metric": "average_precision",
+    "major_metric": "homing_point_ratio",
     "metric_mode": "ascend",
     "save_mode": "local",
-    "learning_rate": 0.01,
+    "learning_rate": 0.001,
     "learning_rate_new": false,
     "gamma": 0.995,
     "step_size": 1,
     "train_batch_size": 16,
     "eval_batch_size": 64,
-    "num_epochs": 12,
+    "num_epochs": 100,
     "eval_freq": 1,
     "num_workers": 8,
     "num_workers_eval": 8,
@@ -55,14 +84,37 @@
     "yolo_dwconv": false,
     "yolo_fix_expand": true,
     "yolo_upsample_type": "bilinear",
-    "model_dir": "experiments/eeavm/exp_1",
-    "tb_path": "experiments/eeavm/tf_log/",
     "pd_or_gt": "predicted",
     "save_img_dir": "",
-    "is_calc_flops": false,
+    "is_calc_flops": true,
     "is_input_gray": false,
     "train_image_type": "jpg",
     "test_image_type": "jpg",
     "perturbed_points": 4,
-    "max_shift_pixels": 10
+    "max_shift_pixels": 10,
+    "camera_list": [
+        "front",
+        "back",
+        "left",
+        "right"
+    ],
+    "bev_mode": "undist2bev",
+    "dataloader_task_mode": [
+        "offset",
+        "coords",
+        "undist",
+        "bev_origin",
+        "bev_perturbed",
+        "name",
+        "path"
+    ],
+    "model_train_type": "supervised",
+    "visualize_mode": "evaluate",
+    "inference_mode": false,
+    "nn_output_do_tanh": true,
+    "train_vis_iter_frequence": 20,
+    "train_visualize_save": true,
+    "eval_visualize_save": true,
+    "second_stage_image_supervised": false,
+    "bev_mask_mode": false
 }
