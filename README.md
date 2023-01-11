@@ -118,3 +118,9 @@ For net, `python model/net_unit_test.py`, the result is under the dir of 'model'
 *** result(1) != result(2) 
 2. `inference:  undist -> bev origin -> bev pred`  
 data['homo_u2b'] = data['H_bev_pert_pred_to_origin'] @ data['H_undist_to_bev_origin']
+
+
+20230111
+
+****
+
