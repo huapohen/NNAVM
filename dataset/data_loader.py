@@ -11,6 +11,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
+
 def collate_fn(batch):
     batch_out = {}
     # image, label, name
@@ -28,8 +29,8 @@ def collate_fn(batch):
                 'offset',
                 'bev_perturbed',
                 'coords_undist',
-                'coords_bev_ori',
-                'coords_bev_perturbed'
+                'coords_bev_origin',
+                'coords_bev_perturbed',
             ]:
                 batch_out[k].extend(v)
             elif k == 'camera_list':
@@ -43,15 +44,26 @@ def collate_fn(batch):
     for k, v in batch_out.items():
         # stack[] -> BCHW
         # if k in ["image", "label"]:
-        if k in ["image", 'coords_undist', 'coords_bev_ori', 
-                 'offset', 'coords_bev_perturbed',
-                 'undist', 'bev_origin', 'bev_perturbed']:
+        if k in [
+            "image",
+            'coords_undist',
+            'coords_bev_origin',
+            'offset',
+            'coords_bev_perturbed',
+            'undist',
+            'bev_origin',
+            'bev_perturbed',
+        ]:
             fblr = []
             for i, _ in enumerate(camera_list):
                 fblr.append(torch.stack(v[i::num_cam]))
-            if k in ['image', 'offset', 
-                     'coords_undist', 'coords_bev_ori', 
-                     'coords_bev_perturbed']:
+            if k in [
+                'image',
+                'offset',
+                'coords_undist',
+                'coords_bev_origin',
+                'coords_bev_perturbed',
+            ]:
                 batch_out[k] = torch.cat(fblr, dim=0)
             else:
                 batch_out[k] = fblr

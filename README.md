@@ -86,3 +86,35 @@ python evaluate.py 启动测试
 
 ****
 
+
+## Homography
+P1 -> P2 -> P3, warp img1 to img3  
+H_13 = H_23 @ H_12  
+warp(H_13, img1) => img3  
+because H@p = p':  
+H<u>n</u> @ H<u>n-1</u> @ H<u>n-2</u> @ ... @ H<u>2</u> @ H<u>1</u> @ P = P'   
+==> H<u>n</u> @ H<u>n-1</u> @ H<u>n-2</u> @ ... @ (H<u>2</u> @ (H<u>1</u> @ P)) = P'   
+from right to left ←, not left to right, 反向找点  
+
+
+H_b2u_pred = H_p2u_pred @ H_b2p_pred # b to p to u  
+H_u2b_pred = torch.inverse(H_b2u_pred) , or   
+H_u2b_pred = H_p2b_pred @ H_u2p_pred  # u to p to b  
+运算顺序：从右往左，左连乘矩阵  
+
+
+Homograpy, 是warp过去，但是却是倒着找点
+
+## Unit test
+For net, `python model/net_unit_test.py`, the result is under the dir of 'model': `vis`
+
+
+## Net second stage pipeline
+
+1. `train & test: undist -> bev perturbed -> bev pred`  
+(1). data['homo_u2b'] = data['H_bev_pert_pred_to_origin'] @ data['H_undist_to_bev_pert']  
+(2). data['coords_bev_origin_pred'] = data["coords_bev_perturbed"] - data['offset_pred']  
+　　data['homo_u2b'] = dlt_homo(data["coords_undist"], data['coords_bev_origin_pred'])  
+*** result(1) != result(2) 
+2. `inference:  undist -> bev origin -> bev pred`  
+data['homo_u2b'] = data['H_bev_pert_pred_to_origin'] @ data['H_undist_to_bev_origin']

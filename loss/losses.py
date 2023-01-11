@@ -19,7 +19,7 @@ def loss_supervised(params, data):
 def loss_unsupervised(params, data):
     losses = []
     for i, cam in enumerate(params.camera_list):
-        pred = data['bev_pred'][i]
+        pred = data['bev_origin_pred'][i]
         gt = data['bev_origin'][i]
         loss = F.l1_loss(pred, gt.float())
         losses.append(loss.unsqueeze(0))

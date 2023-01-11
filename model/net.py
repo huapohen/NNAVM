@@ -16,52 +16,86 @@ def fetch_net(params):
 
 def second_stage(params, data):
 
+    bs = int(data['image'].shape[0] / len(params.camera_list))
+
     if params.nn_output_do_tanh:
         data['offset_pred'] = data['offset_pred'].tanh() * params.max_shift_pixels
 
-    data['coords_bev_perturbed_pred'] = data["coords_bev_ori"] + data['offset_pred']
-    data['H_bev_pt2gt'] = dlt_homo(
-        data["coords_bev_perturbed_pred"], data['coords_bev_ori']
+    # data['offset_pred'] = data['offset']
+    data['coords_bev_perturbed_pred'] = data["coords_bev_origin"] + data['offset_pred']
+    data['H_bev_pert_pred_to_origin'] = dlt_homo(
+        data["coords_bev_perturbed_pred"], data['coords_bev_origin']
     )
 
     if params.bev_mask_mode:
         bs = int(data['image'].shape[0] / len(params.camera_list))
-        data['bev_pred'] = get_warp_image(
-            params, bs, data['H_bev_pt2gt'], data['bev_perturbed']
+        data['bev_origin_pred'] = get_warp_image(
+            params, bs, data['H_bev_pert_pred_to_origin'], data['bev_perturbed']
         )
         mask = [torch.ones_like(img) for img in data['bev_perturbed']]
-        data['mask'] = get_warp_image(params, bs, data['H_bev_pt2gt'], mask)
-        data['bev_ori'] = [
-            x[0] * x[1] for x in list(zip(data['bev_ori'], data['mask']))
+        data['mask_bev_origin_pred'] = get_warp_image(
+            params, bs, data['H_bev_pert_pred_to_origin'], mask
+        )
+        data['bev_origin_masked'] = [
+            x[0] * x[1]
+            for x in list(zip(data['bev_origin'], data['mask_bev_origin_pred']))
         ]
 
         return data
 
-    if not params.inference_mode:
-        # train & test: the input fev and undist is ground thruth, correct images
-        data['H_undist2bev'] = dlt_homo(
-            data["coords_undist"], data['coords_bev_perturbed_pred']
+    if params.train_eval_inference in ['train', 'eval']:
+        # train & test:
+        #   the input fev and undist is ground thruth, correct images
+        data['H_undist_to_bev_pert'] = dlt_homo(
+            data["coords_undist"], data['coords_bev_perturbed']
         )
-        data['homo'] = data['H_undist2bev'] @ data['H_bev_pt2gt']
+        # undist -> bev perturbed -> bev pred
+        data['homo_u2b'] = (
+            data['H_bev_pert_pred_to_origin'] @ data['H_undist_to_bev_pert']
+        )
 
         # used for visualization
-        data['coords_bev_ori_pred'] = data["coords_bev_perturbed"] - data['offset_pred']
+        data['H_undist_to_bev_pert_pred'] = dlt_homo(
+            data["coords_undist"], data['coords_bev_perturbed_pred']
+        )
+        data['bev_perturbed_pred'] = get_warp_image(
+            params, bs, data['H_undist_to_bev_pert_pred'], data['undist']
+        )
+        data['coords_bev_origin_pred'] = (
+            data["coords_bev_perturbed"] - data['offset_pred']
+        )
+
         if params.second_stage_image_supervised:
-            data['homo'] = dlt_homo(data["coords_undist"], data['coords_bev_ori_pred'])
+            # In inference, input doesn't have coords_bev_perturbed, which is supervised info.
+            data['homo_u2b'] = dlt_homo(
+                data["coords_undist"], data['coords_bev_origin_pred']
+            )
+
+    elif params.train_eval_inference == 'inference':
+        # Inference:
+        #   the input fish-eye view has two situations: distorted or correct,
+        #   so the undistord images may be perturbed.
+        #   For example, a car drives over a speed bump.
+        #   Similarly, the car drove through the flat ground without perturbed.
+        data['H_undist_to_bev_origin'] = dlt_homo(
+            data["coords_undist"], data['coords_bev_origin']
+        )
+        # (1) H_u2? @ undist_real-> bev_real
+        # (2) H_?2b @ bev_real -> bev_origin_pred
+        # (1)+(2): (H_?2b @ H_u2?= Homo) @ undist_real -> bev_origin_pred
+        data['homo_u2b'] = (
+            data['H_bev_pert_pred_to_origin'] @ data['H_undist_to_bev_origin']
+        )
     else:
-        # Inference: the input fish-eye view is distorted, also as the undistored image
-        data['H_undist2bev'] = dlt_homo(data["coords_undist"], data['coords_bev_ori'])
-        # (1) undist_real = undist_pert @ H_u2b -> bev_pert
-        # (2) bev_pert @ H_pt2gt -> bev_pred
-        # (1)+(2): undist_pert @ (H_u2b @ H_pt2gt = Homo) -> bev_pred
-        data['homo'] = data['H_undist2bev'] @ data['H_bev_pt2gt']
+        raise ValueError
 
-    # for train & test: undist_gt to bev_pert
-    # for inference:    undist_?  to bev_pert
+    # for train & test: undist_gt to bev_pert to bev_origin_pred
+    # for inference:    undist_?  to bev_? to bev_origin_pred
     # because undist_? in real world, maybe correct or error (same as perturbed)
-    # add some right images ?
+    # add some right images as negtive samples
 
-    bs = int(data['image'].shape[0] / len(params.camera_list))
-    data['bev_pred'] = get_warp_image(params, bs, data['homo'], data['undist'])
+    data['bev_origin_pred'] = get_warp_image(
+        params, bs, data['homo_u2b'], data['undist']
+    )
 
     return data

@@ -25,18 +25,20 @@ def train_config(cfg):
     # cfg.camera_list = ["front", 'back']
     # cfg.camera_list = ["front", 'back', 'left', 'right']
     cfg.exp_id = 1
-    cfg.gpu_used = '2_5'
+    cfg.gpu_used = '1'
     cfg.train_batch_size = 16
-    cfg.num_epochs = 12
+    cfg.num_epochs = 100
     cfg.train_data_ratio = [["v2", 1]]
     # cfg.model_train_type = "supervised"
     cfg.model_train_type = "unsupervised"
     # cfg.second_stage_image_supervised = True  # exp_8
     # cfg.bev_mask_mode = True # exp_9
-    cfg.eval_freq = 1
+    # cfg.eval_freq = 1
     cfg.train_visualize_save = True
     cfg.train_vis_iter_frequence = 20
-    # cfg.eval_freq = 10000
+    cfg.eval_freq = 10000
+    cfg.major_metric = 'total_loss'
+    cfg.metric_mode = 'descend'
     cfg = continue_train(cfg, 0)
     # cfg.gpu_used = '0_1_2_3_4_5_6_7' # use 8 GPUs
     return cfg
@@ -44,8 +46,8 @@ def train_config(cfg):
 
 def test_config(cfg, args=None):
 
-    cfg.exp_id = 6
-    cfg.gpu_used = '6'
+    cfg.exp_id = 1
+    cfg.gpu_used = '2_5'
     cfg.eval_batch_size = 2
     cfg.test_data_ratio = [["v2", 1]]
     cfg.camera_list = ["front"]

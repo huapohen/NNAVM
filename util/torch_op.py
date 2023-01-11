@@ -5,14 +5,13 @@ import numpy as np
 import torch.nn as nn
 
 
-
 def dlt_homo(src_pt, dst_pt, method="Axb"):
     """
     :param src_pt: shape=(batch, num, 2)
     :param dst_pt:
     :param method: Axb (Full Rank Decomposition, inv_SVD) = 4 piar points
                 Ax0 (SVD) >= 4 pair points, 4,6,8
-    :return: Homography
+    :return: Homography, shape=(batch, 3, 3)
     """
     assert method in ["Ax0", "Axb"]
     assert src_pt.shape[1] >= 4
@@ -176,7 +175,7 @@ def get_flow_vgrid(H_mat_mul, patch_indices, patch_size_h, patch_size_w, divide=
     ).repeat_interleave(small_gap_sz[1], axis=2)
 
     pred_I2_index_warp = patch_indices.permute(0, 2, 3, 1).unsqueeze(4).contiguous()
-    
+
     pred_I2_index_warp = (
         torch.matmul(H_mat_pool, pred_I2_index_warp)
         .squeeze(-1)
@@ -230,8 +229,8 @@ def get_warp_image(params, batch_size, homo, src):
         w, h = params.wh_bev_fblr[cam]
         grid = get_grid(batch_size, h, w, 0, params.cuda)
         h_this = homo[i : (i + 1) * batch_size]
-        h_this = torch.inverse(h_this)
-        flow, vgrid = get_flow_vgrid(h_this, grid, h, w, 1)
+        h_inv = torch.inverse(h_this)
+        flow, vgrid = get_flow_vgrid(h_inv, grid, h, w, 1)
         hgrid = vgrid + flow
         dst_this = warp_image(src[i], hgrid)
         dst.append(dst_this)

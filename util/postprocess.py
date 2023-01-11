@@ -11,7 +11,7 @@ from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 from skimage.metrics import structural_similarity as compare_ssim
 
 
-def plot_indicator(params, pt_this, pt_gt, img_this, img_gt, mode):
+def plot_indicator(params, pt_this, pt_gt, img_this, img_gt):
     # not round 0.999* -> 1, reserve 0.999
 
     # psnr ssim
@@ -51,7 +51,19 @@ def plot_indicator(params, pt_this, pt_gt, img_this, img_gt, mode):
     return img_this
 
 
+def plot_iter_info(params, img):
+    str_info = [
+        f'iter: [{params.current_iter:04}/{params.iter_max:04}]',
+        f'epoch: [{params.current_epoch:2}/{params.num_epochs:2}]',
+    ]
+    txt_info = (cv2.FONT_HERSHEY_SIMPLEX, 1, (192, 192, 192), 2)
+    for i, ele in enumerate(str_info):
+        cv2.putText(img, ele, (460, (i + 2) * 50), *txt_info)
+    return img
+
+
 def plot_pt(params, img, pt_ori, pt_pred, pt_pert, img_gt, mode='gt'):
+    '''suitable for unsupervise and supervise'''
     color = [[0, 0, 255], [0, 255, 0], [0, 255, 255]]
     for i, pt in enumerate([pt_ori, pt_pred, pt_pert]):
         if mode == 'pred' and i == 2:
@@ -62,41 +74,62 @@ def plot_pt(params, img, pt_ori, pt_pred, pt_pert, img_gt, mode='gt'):
             x, y = tuple(np.int32(pt)[k])
             cv2.circle(img, (x, y), 3, color[i], -1)
     if mode == 'pred':
-        img = plot_indicator(params, pt_pred, pt_ori, img, img_gt, mode)
+        img = plot_indicator(params, pt_pred, pt_ori, img, img_gt)
     elif mode == 'pert':
-        img = plot_indicator(params, pt_pert, pt_ori, img, img_gt, mode)
+        img = plot_indicator(params, pt_pert, pt_ori, img, img_gt)
     cv2.putText(img, mode, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (192, 192, 192), 2)
-    if mode == 'gt' and params.visualize_mode == 'train':
-        idx = params.current_iter
-        epoch = params.current_epoch
-        cv2.putText(
-            img,
-            f'iter: [{idx:04}/{params.iter_max:04}]',
-            (100, 50),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (192, 192, 192),
-            2,
-        )
-        cv2.putText(
-            img,
-            f'epoch: [{epoch:2}/{params.num_epochs:2}]',
-            (100, 100),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (192, 192, 192),
-            2,
-        )
+    if mode == 'bev_origin' and params.visualize_mode == 'train':
+        img = plot_iter_info(params, img)
     return img
 
 
-def plot_pt_v2(img, pt_ori, pt_pert):
-    color = [[0, 0, 255], [0, 255, 255]]
-    for i, pt in enumerate([pt_ori, pt_pert]):
-        for k in range(len(pt_ori)):
+def plot_pt_unsupervised_kernel(params, pts, bevs_cam):
+    color = {
+        'bev_perturbed': (0, 255, 255),
+        'bev_perturbed_pred': (0, 128, 255),
+        'bev_origin': (0, 0, 255),
+        'bev_origin_pred': (0, 255, 0),
+    }
+    color_name = {
+        'bev_perturbed': 'yellow',
+        'bev_perturbed_pred': 'orange',
+        'bev_origin': 'red',
+        'bev_origin_pred': 'green',
+    }
+
+    def _plot_point(pt, name, img):
+        for k in range(len(pt)):
             x, y = tuple(np.int32(pt)[k])
-            cv2.circle(img, (x, y), 3, color[i], -1)
-    return img
+            cv2.circle(img, (x, y), 3, color[name], -1)
+        return img
+
+    pt_ori = pts['coords_bev_origin']
+    img_ori = bevs_cam['bev_origin']
+    imgs_cam = []
+    for name, img in bevs_cam.items():
+        img = _plot_point(pt_ori, 'bev_origin', img)
+        pt = pts[f'coords_{name}']
+        img = _plot_point(pt, name, img)
+        if name == 'bev_perturbed':
+            n2 = 'bev_perturbed_pred'
+            img = _plot_point(pts[f'coords_{n2}'], n2, img)
+        elif name == 'bev_perturbed_pred':
+            n1 = 'bev_perturbed'
+            img = _plot_point(pts[f'coords_{n1}'], n1, img)
+        elif name == 'bev_origin_pred':
+            pass
+        elif name == 'bev_origin':
+            for ele in ['bev_perturbed', 'bev_perturbed_pred', 'bev_origin_pred']:
+                img = _plot_point(pts[f'coords_{ele}'], ele, img)
+        if name != 'bev_origin':
+            img = plot_indicator(params, pt, pt_ori, img, img_ori)
+        elif params.visualize_mode == 'train':
+            img = plot_iter_info(params, img)
+        txt_info = (cv2.FONT_HERSHEY_SIMPLEX, 1, (192, 192, 192), 2)
+        cv2.putText(img, name[4:], (50, 50), *txt_info)
+        cv2.putText(img, color_name[name], (50, 100), *txt_info)
+        imgs_cam.append(img)
+    return imgs_cam
 
 
 def visualize_supervised(params, data):
@@ -115,13 +148,13 @@ def visualize_supervised(params, data):
     else:  # test evaluate
         num = batch_size
 
-    homo = data['homo']
+    homo = data['homo_u2b']
     undist = data['undist']
-    bev_ori = data['bev_origin']
-    bev_pred = data['bev_pred']
+    bev_origin = data['bev_origin']
+    bev_origin_pred = data['bev_origin_pred']
     bev_pert = data['bev_perturbed']
-    pts_ori = data['coords_bev_ori'].detach().cpu().numpy()
-    pts_pred = data['coords_bev_ori_pred'].detach().cpu().numpy()
+    pts_ori = data['coords_bev_origin'].detach().cpu().numpy()
+    pts_pred = data['coords_bev_origin_pred'].detach().cpu().numpy()
     pts_pert = data['coords_bev_perturbed'].detach().cpu().numpy()
     name = data['name']
     set_name = data['path'][0][0].split(os.sep)[-2]
@@ -141,10 +174,10 @@ def visualize_supervised(params, data):
                 undist_cv2, homo_u2b_cv2, wh, cv2.INTER_LINEAR
             )
             img_cv2 = img_cv2[:, :, np.newaxis]
-            img_torch = bev_pred[i][j].detach().cpu().numpy()
+            img_torch = bev_origin_pred[i][j].detach().cpu().numpy()
             img_torch = img_torch.transpose((1, 2, 0)).astype(np.uint8)
             img_pert = bev_pert[i][j].numpy().transpose((1, 2, 0))
-            img_gt = bev_ori[i][j].numpy().transpose((1, 2, 0))
+            img_gt = bev_origin[i][j].numpy().transpose((1, 2, 0))
             img_gt = cv2.cvtColor(img_gt, cv2.COLOR_GRAY2BGR)
             img_cv2 = cv2.cvtColor(img_cv2, cv2.COLOR_GRAY2BGR)
             img_torch = cv2.cvtColor(img_torch, cv2.COLOR_GRAY2BGR)
@@ -172,10 +205,46 @@ def visualize_unsupervised_inference(params, data):
     return
 
 
+def stack_multi_cams_imgs(params, imgs, bev_name_list):
+    cams = params.camera_list
+    wh_fblr = list(params.wh_bev_fblr.values())
+    k = len(bev_name_list)
+    if len(cams) == 1:
+        imgs_all = imgs[0]
+    elif len(cams) == 4:
+        fb = np.concatenate([imgs[0], imgs[1]], axis=0)
+        lr = np.concatenate([imgs[2], imgs[3]], axis=0)
+        # z1 = np.zeros([336 * 4, 1172 - 1078, 3])
+        # z2 = np.zeros([4 * (439 - 336), 1172, 3])
+        z1 = np.zeros([wh_fblr[0][1] * (k * 2), wh_fblr[2][0] - wh_fblr[0][0], 3])
+        z2 = np.zeros([(k * 2) * (wh_fblr[2][1] - wh_fblr[0][1]), wh_fblr[2][0], 3])
+        fb = np.concatenate([fb, z1], axis=1)
+        fb = np.concatenate([fb, z2], axis=0)
+        imgs_all = np.concatenate([fb, lr], axis=1)
+    elif len({'front', 'back'}.intersection(cams)) == 2:
+        imgs_all = np.concatenate([imgs[0], imgs[1]], axis=0)
+    elif len({'left', 'right'}.intersection(cams)) == 2:
+        imgs_all = np.concatenate([imgs[0], imgs[1]], axis=0)
+    elif len(cams) == 2 and cams[0] in ['front', 'back']:
+        fb, lr = imgs[0], imgs[1]
+        # z1 = np.zeros([336 * 2, 1172 - 1078, 3])
+        # z2 = np.zeros([2 * (439 - 336), 1172, 3])
+        z1 = np.zeros([wh_fblr[0][1] * k, wh_fblr[2][0] - wh_fblr[0][0], 3])
+        z2 = np.zeros([k * (wh_fblr[2][1] - wh_fblr[0][1]), wh_fblr[2][0], 3])
+        fb = np.concatenate([fb, z1], axis=1)
+        fb = np.concatenate([fb, z2], axis=0)
+        imgs_all = np.concatenate([fb, lr], axis=1)
+    else:
+        raise ValueError("not support 3 cameras")
+
+    return imgs_all
+
+
 def visualize_unsupervised_kernel(params, data):
     '''
     num = 1 for training, every iteration_frequence, plot
     num = batch_size for evaluate
+    # have used dataset supervised info for visualization
     '''
     idx = params.current_iter
     batch_size = int(data['image'].shape[0] / len(params.camera_list))
@@ -188,69 +257,48 @@ def visualize_unsupervised_kernel(params, data):
     else:  # test evaluate
         num = batch_size
 
-    sv_dir = f'{params.model_dir}/vis_{params.visualize_mode}'
-    os.makedirs(sv_dir, exist_ok=True)
-    wh_fblr = list(params.wh_bev_fblr.values())
-    pts_ori = data['coords_bev_ori'].detach().cpu().numpy()
-    pts_pred = data['coords_bev_ori_pred'].detach().cpu().numpy()
-    pts_pert = data['coords_bev_perturbed'].detach().cpu().numpy()
-    imgs = []
+    pt_name_list = [
+        'coords_bev_perturbed',  # supervised info
+        'coords_bev_perturbed_pred',
+        'coords_bev_origin',
+        'coords_bev_origin_pred',  # supervised info
+    ]
+    pts = {}
+    for name in pt_name_list:
+        pts[name] = data[name].detach().cpu().numpy()
+    bev_name_list = [
+        'bev_perturbed',
+        'bev_perturbed_pred',
+        'bev_origin',
+        'bev_origin_pred',
+    ]
+    bevs = {}
+    for name in bev_name_list:
+        bevs[name] = data[name]
 
+    imgs = []
     for i, cam in enumerate(params.camera_list):
         for j in range(num):
-            pt_ori = pts_ori[i : (i + 1) * batch_size][j]
-            pt_pred = pts_pred[i : (i + 1) * batch_size][j]
-            pt_pert = pts_pert[i : (i + 1) * batch_size][j]
-            img_pd = data['bev_pred'][i][j].detach().cpu().numpy()
-            img_gt = data['bev_origin'][i][j].detach().cpu().numpy()
-            img_pt = data['bev_perturbed'][i][j].detach().cpu().numpy()
-            img_pd = img_pd.transpose((1, 2, 0))
-            img_gt = img_gt.transpose((1, 2, 0))
-            img_pt = img_pt.transpose((1, 2, 0))
-            img_pd = cv2.cvtColor(img_pd, cv2.COLOR_GRAY2BGR)
-            img_gt = cv2.cvtColor(img_gt, cv2.COLOR_GRAY2BGR)
-            img_pt = cv2.cvtColor(img_pt, cv2.COLOR_GRAY2BGR)
-            img_gt = plot_pt(params, img_gt, pt_ori, pt_pred, pt_pert, img_gt, 'gt')
-            img_pd = plot_pt(params, img_pd, pt_ori, pt_pred, pt_pert, img_gt, 'pred')
-            img_pt = plot_pt(params, img_pt, pt_ori, pt_pred, pt_pert, img_gt, 'pert')
-            pt_pd_gt = np.concatenate([img_pt, img_pd, img_gt], axis=0)
-            imgs.append(pt_pd_gt)
-        # Concatenate 4 cameras
-        cams = params.camera_list
-        if len(cams) == 1:
-            all = imgs[0]
-        elif len(cams) == 4:
-            fb = np.concatenate([imgs[0], imgs[1]], axis=0)
-            lr = np.concatenate([imgs[2], imgs[3]], axis=0)
-            # z1 = np.zeros([336 * 4, 1172 - 1078, 3])
-            # z2 = np.zeros([4 * (439 - 336), 1172, 3])
-            z1 = np.zeros([wh_fblr[0][1] * 6, wh_fblr[2][0] - wh_fblr[0][0], 3])
-            z2 = np.zeros([6 * (wh_fblr[2][1] - wh_fblr[0][1]), wh_fblr[2][0], 3])
-            fb = np.concatenate([fb, z1], axis=1)
-            fb = np.concatenate([fb, z2], axis=0)
-            all = np.concatenate([fb, lr], axis=1)
-        elif len({'front', 'back'}.intersection(cams)) == 2:
-            all = np.concatenate([imgs[0], imgs[1]], axis=0)
-        elif len({'left', 'right'}.intersection(cams)) == 2:
-            all = np.concatenate([imgs[0], imgs[1]], axis=0)
-        elif len(cams) == 2 and cams[0] in ['front', 'back']:
-            fb, lr = imgs[0], imgs[1]
-            # z1 = np.zeros([336 * 2, 1172 - 1078, 3])
-            # z2 = np.zeros([2 * (439 - 336), 1172, 3])
-            z1 = np.zeros([wh_fblr[0][1] * 3, wh_fblr[2][0] - wh_fblr[0][0], 3])
-            z2 = np.zeros([3 * (wh_fblr[2][1] - wh_fblr[0][1]), wh_fblr[2][0], 3])
-            fb = np.concatenate([fb, z1], axis=1)
-            fb = np.concatenate([fb, z2], axis=0)
-            all = np.concatenate([fb, lr], axis=1)
-        else:
-            raise ValueError("not support 3 cameras")
-        # Save result
-        if num == 1:
-            name = f'{idx:04}.jpg'
-        else:  # num = bs
-            name = f"{data['name'][i][j]}.jpg"
-        cv2.imwrite(os.path.join(sv_dir, name), all)
-    cv2.imwrite(os.path.join(params.model_dir, "vis.jpg"), all)
+            for k, v in pts.items():
+                pts[k] = v[i : (i + 1) * batch_size][j]
+            bevs_cam = {}
+            for k, v in bevs.items():
+                bev = bevs[k][i][j].detach().cpu().numpy().transpose((1, 2, 0))
+                bevs_cam[k] = cv2.cvtColor(bev, cv2.COLOR_GRAY2BGR)
+            imgs_cam = plot_pt_unsupervised_kernel(params, pts, bevs_cam)
+            stack = np.concatenate(imgs_cam, axis=0)
+            imgs.append(stack)
+    # Concatenate 4 or multi cameras
+    img_stack_all = stack_multi_cams_imgs(params, imgs, bev_name_list)
+    # Save result
+    if num == 1:
+        name = f'{params.current_iter:04}.jpg'
+    else:  # num = bs
+        name = f"{data['name'][i][j]}.jpg"
+    sv_dir = f'{params.model_dir}/vis_{params.visualize_mode}'
+    os.makedirs(sv_dir, exist_ok=True)
+    cv2.imwrite(os.path.join(sv_dir, name), img_stack_all)
+    cv2.imwrite(os.path.join(params.model_dir, "vis.jpg"), img_stack_all)
 
     return
 

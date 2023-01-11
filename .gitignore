@@ -12,3 +12,4 @@ dataset/data/*
 !dataset/data/homo.json
 experiments/eeavm
 experiments/config/*
+model/vis*

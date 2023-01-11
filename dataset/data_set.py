@@ -95,7 +95,7 @@ class DatasetPipeline(Dataset):
         if 'coords' in task_mode:
             pts1, pts2, pts3 = self.get_coords(base_path, name)
             data['coords_undist'] = pts1
-            data['coords_bev_ori'] = pts2
+            data['coords_bev_origin'] = pts2
             data['coords_bev_perturbed'] = pts3
         if 'bev_origin' in task_mode:
             data['bev_origin'] = self.get_bev_origin(base_path)

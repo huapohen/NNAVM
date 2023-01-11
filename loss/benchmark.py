@@ -37,7 +37,7 @@ def cacl_psnr_indicator(params, data, indicator):
     psnr = skimage.measure.compare_psnr(im1, im2, 255)
     '''
     gt = data['bev_origin']
-    pd = data['bev_pred']
+    pd = data['bev_origin_pred']
     m_psnr = []
     for i, cam in enumerate(params.camera_list):
         mse = torch.square(pd[i] / 255.0 - gt[i] / 255.0).float().mean()
