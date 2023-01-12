@@ -26,6 +26,8 @@ for pert_value in [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]:
     bev_pts_pert = bev_pts_ori + offset_pert
     H_u2p_pert, _ = cv2.findHomography(undist_pts, bev_pts_pert, 0)
     img_bev_pert = cv2.warpPerspective(img_undist, H_u2p_pert, bev_wh, cv2.INTER_LINEAR)
+    cv2.imwrite(f'model/vis/{pert_value:02}.jpg', img_bev_pert)
+    continue
 
     # 2. 训练 和 测试，非推理
     # scale = 20

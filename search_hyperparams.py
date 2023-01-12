@@ -8,7 +8,7 @@ import itertools
 import collections
 
 from common import utils
-from experiment_dispatcher import dispatcher, tmux
+from window_segment import dispatcher, tmux
 
 
 PYTHON = sys.executable
