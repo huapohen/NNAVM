@@ -17,7 +17,6 @@ from tqdm import tqdm
 from skimage import morphology
 from easydict import EasyDict
 from itertools import permutations
-from einops import rearrange
 
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "5"
@@ -26,16 +25,13 @@ torch.backends.cuda.matmul.allow_tf32 = False
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
+torch.cuda.manual_seed(0)
 
 
 class DataMakerTorch(nn.Module):
     '''
-    if enable cuda, the result caculated by homo_torch_op is error, surprisely!
-    if disable cuda (use cpu), the result is right.
-    Why ?
-    cuda core operation mechanism?
+    99%|███████████████████████████████████████████████████████▌| 124/125 [15:02<00:07,  7.28s/it]
     '''
-
     def __init__(self, enable_cuda=True):
         super().__init__()
         self.dataset_root = '/home/data/lwb/data'
@@ -62,8 +58,8 @@ class DataMakerTorch(nn.Module):
         self.offset_pix_range = 15
         self.perturb_mode = 'uniform'  # randint
         # the idx=0 image don't perturb, and the idx=1 to idx=1000 images are perturbed
-        self.train_img_num = 1
-        self.test_img_num = 2
+        self.train_pertrubed_num = 1
+        self.test_pertrubed_num = 2
         self.num_total_images = -1
         self.method = 'Axb'
         self.index = [0, 3, 4, 7]  # four corners
@@ -148,6 +144,7 @@ class DataMakerTorch(nn.Module):
     def _init_undistored_parameters(self):
         scale = 1.0  # previous 0.5, current 1.0
         scale = self.new_scale_for_undist = 1.0
+        self.scale_previous_value = 0.5
         fish = {"scale": scale, "width": 1280, "height": 960}
         hardware = {"focal_length": 950, "dx": 3, "dy": 3, "cx": 640, "cy": 480}
         distort = {
@@ -203,41 +200,49 @@ class DataMakerTorch(nn.Module):
         if size % batch != 0:
             batch_list.append(size % batch)
             iteration += 1
+        prt_str = (
+            f' \n' + \
+            f' camera_list: {self.camera_fblr} \n' + \
+            f' src_num_mode: {self.src_num_mode} \n' + \
+            f' num_img_per_camera: {self.num_img_per_camera} \n' + \
+            f' batch_size: {self.batch_size} \n' + \
+            f' iteration: {iteration} \n' + \
+            f' threads_num: {self.threads_num} \n' + \
+            f' train_pertrubed_num: {self.train_pertrubed_num} \n' + \
+            f' \n'
+        )
+        print(prt_str)
         return batch_list, iteration
 
     def _init_json_key_names(self):
         self.key_name_pts_perturb = EasyDict(
-            dict(
                 dataset_version="dataset_version",
                 perturbed_image_type="perturbed_image_type",
                 perturbed_pipeline="perturbed_pipeline",
                 dlt_homography_method="dlt_homography_method",
                 make_date="make_date",
                 random_mode="random_mode",
-                train_img_num="train_img_num",
-                test_img_num="test_img_num",
+                train_pertrubed_num="train_pertrubed_num",
+                test_pertrubed_num="test_pertrubed_num",
                 camera_list="camera_list",
                 offset_pixel_range="offset_pixel_range",
                 original_points="original_points",
                 perturbed_points_list="perturbed_points_list",
                 offset_list="offset_list",
-            )
         )
         self.key_name_pts_detect = EasyDict(
-            dict(
                 detected_points='detected_points',
                 corner_points='corner_points',
-            )
         )
         return
 
     def _init_mode(self, mode='train'):
         if mode in ['train', 'gt_bev']:
-            self.num_generated_points = self.train_img_num
+            self.num_generated_points = self.train_pertrubed_num
             self.delta_num = 0
         elif mode == 'test':
-            self.num_generated_points = self.test_img_num
-            self.delta_num = self.train_img_num
+            self.num_generated_points = self.test_pertrubed_num
+            self.delta_num = self.train_pertrubed_num
         else:
             raise ValueError('support mode in [`train`. `test`]')
         self.dataset_mode_dir = set_dir = os.path.join(self.dataset_dir, mode)
@@ -255,21 +260,24 @@ class DataMakerTorch(nn.Module):
         nam_fblr = None
 
         # for multiprocessing
-        def _read_image_kernel(img_path):
+        def _read_image_kernel(img_path, name):
             img = cv2.imread(img_path)
-            if self.new_scale_for_undist == 1.0:
-                wh = tuple([int(x / 2) for x in img.shape[:2]][::-1])
+            if self.new_scale_for_undist != self.scale_previous_value:
+                r_scale = int(self.new_scale_for_undist / self.scale_previous_value)
+                wh = tuple([int(x / r_scale) for x in img.shape[:2]][::-1])
                 img = cv2.resize(img, wh, interpolation=cv2.INTER_AREA)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             img = torch.from_numpy(img).unsqueeze(0)
-            return img
+            return img, name
 
         if align_fblr:
             if mode == self.src_num_mode_key_name.single:
                 src_fblr = self.read_image_fblr()
             elif mode == self.src_num_mode_key_name.multi:
-                src_fblr = dict(zip(self.camera_fblr, [[]] * len(self.camera_fblr)))
-                nam_fblr = dict(zip(self.camera_fblr, [[]] * len(self.camera_fblr)))
+                src_fblr, nam_fblr = {}, {}
+                for camera in self.camera_fblr:
+                    src_fblr[camera] = []
+                    nam_fblr[camera] = []
                 for camera in self.camera_fblr:
                     if batch_size is not None and idx is not None:
                         cam_dir = os.path.join(self.multiple_undist_dir, camera)
@@ -295,8 +303,9 @@ class DataMakerTorch(nn.Module):
                                 # preprocess
                                 name = file_name_list[i * threads_num + j]
                                 file_path = os.path.join(cam_dir, name)
+                                args = (file_path, name)
                                 # input
-                                thr = ThreadsOP(_read_image_kernel, args=(file_path,))
+                                thr = ThreadsOP(_read_image_kernel, args)
                                 threads.append(thr)
                             # process
                             for thr in threads:
@@ -305,7 +314,7 @@ class DataMakerTorch(nn.Module):
                                 thr.join()
                             for thr in threads:
                                 # postprocess
-                                img = thr.get_result()
+                                img, name = thr.get_result()
                                 # output
                                 src_fblr[camera].append(img)
                                 nam_fblr[camera].append(name)
@@ -379,10 +388,12 @@ class DataMakerTorch(nn.Module):
             kn1_.dlt_homography_method: self.method,
             kn1_.make_date: time.strftime('%z %Y-%m-%d %H:%M:%S', time.localtime()),
             kn1_.random_mode: self.perturb_mode,
-            kn1_.train_img_num: self.train_img_num,
-            kn1_.test_img_num: self.test_img_num,
+            kn1_.train_pertrubed_num: self.train_pertrubed_num,
+            kn1_.test_pertrubed_num: self.test_pertrubed_num,
             kn1_.camera_list: self.camera_fblr,
         }
+        print(pts_perturb)
+        print(f'dataset_dir: {self.dataset_dir} \n')
         if index is None:
             index = self.index
         for camera in self.camera_fblr:
@@ -448,8 +459,8 @@ class DataMakerTorch(nn.Module):
             save_dir = f"{self.generate_dir}/{camera}"
             os.makedirs(save_dir, exist_ok=True)
             for i in range(self.delta_num, self.delta_num + self.num_generated_points):
-                idx = f'{i:04}'
                 # perturbed points on bev
+                idx = f'{i:04}' # fixed index format for generating perturbed points
                 pt_perturbed = pts_perturb[camera][kn_.perturbed_points_list][idx]
                 pt_perturbed = torch.Tensor(pt_perturbed).reshape(1, -1, 2)
                 if self.enable_cuda:
@@ -471,14 +482,14 @@ class DataMakerTorch(nn.Module):
         kn_ = self.key_name_pts_perturb
 
         # for multiprocessing
-        def _save_image_kernel(sv_path, img):
+        def _threads_kernel(sv_path, img):
             is_success = cv2.imwrite(sv_path, img)
             return is_success
 
         def _preprocess(i, j, threads_num, dst, names, save_dir, idx):
             img = dst[i * threads_num + j]
             name = names[i * threads_num + j]
-            name = name.replace('.', f'_p{idx}.')
+            name = name.replace('.', f'_p{idx:04}.')
             sv_path = os.path.join(save_dir, name)
             return (sv_path, img)
 
@@ -487,14 +498,13 @@ class DataMakerTorch(nn.Module):
                 raise Exception("imwrite error")
 
         for camera in self.camera_fblr:
-            print(camera)
             names = name_fblr[camera]
             src_cam = src_fblr[camera]
             save_dir = os.path.join(self.generate_dir, camera)
             os.makedirs(save_dir, exist_ok=True)
             for k in range(self.delta_num, self.delta_num + self.num_generated_points):
-                idx = f'{k:04}'
                 # perturbed points on bev
+                idx = f'{k:04}' # fixed index format for generating perturbed points
                 pt_perturbed = pts_perturb[camera][kn_.perturbed_points_list][idx]
                 pt_perturbed = torch.Tensor(pt_perturbed).reshape(1, -1, 2)
                 if self.enable_cuda:
@@ -507,11 +517,12 @@ class DataMakerTorch(nn.Module):
                 dst = dst.transpose(1, 2).transpose(2, 3) # bchw -> bhwc
                 dst = dst.detach().cpu().numpy()
                 # save
+                input_values = (self.threads_num, dst, names, save_dir, k)
                 self.mtp.multi_threads_process(
-                    input_values=(self.threads_num, dst, names, save_dir, idx),
+                    input_values=input_values,
                     batch_size=len(dst),
                     threads_num=self.threads_num,
-                    func_thread_kernel=_save_image_kernel,
+                    func_thread_kernel=_threads_kernel,
                     func_preprocess=_preprocess,
                     func_postprocess=_postprocess,
                 )
@@ -1113,8 +1124,12 @@ class ThreadsOP(threading.Thread):
             return None
 
 
-class MultiThreadsProcess:
+class MultiThreadsProcess():
     '''
+    output: result_list
+    class `ThreadsOP`:
+        which is used for single thread process
+    
     func_preprocess:
         input: tuple(i, j, *input_values)
         output: tuple(v1, ...) at least one return value
@@ -1124,11 +1139,27 @@ class MultiThreadsProcess:
     func_postprocess:
         input: None or tuple(v1, ...)
         output: None
+        
+    method of applicatin:
+        step 1. init class
+            self.mtp = MultiThreadsProcess()
+        step 2. write template pipeline function
+            (a) def _threads_kernel; (b) def _preprocess;
+            (c) def _postprocess (if need)
+        step 3. call multiprocessing function
+            input_values = (v1, v2, ...) # at least one value
+            self.mtp.multi_threads_process(
+                input_values=input_values,
+                batch_size=len(dst),
+                threads_num=self.threads_num,
+                func_thread_kernel=_threads_kernel,
+                func_preprocess=_preprocess,
+                func_postprocess=_postprocess,
+            )
     '''
 
     def __init__(self):
         super().__init__()
-        pass
 
     def multi_threads_process(
         self,
