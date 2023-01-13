@@ -75,7 +75,8 @@ python evaluate.py 启动测试
   (1). v1目录，是用去畸变图上做扰动造的数据集  
   (2). v2目录，是用鸟瞰图上做扰动造的数据集  
   但v1和v2都是每个摄像头只用一张输入图造的，从v3开始是多张输入图来造  
-  造数据脚本dataset/data_maker.py  
+  造数据脚本dataset/data_maker.py 
+  (3). v3   
 
 ## TensorboardX  
 `tensorboard --logdir_spec exp_1:add_1,exp_2:add_2 --bind_all --port xxxx`  
