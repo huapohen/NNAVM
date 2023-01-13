@@ -835,8 +835,10 @@ class DataMakerCV2:
 
     def random_perturb(self, start):
         """
-        adding a random warping for fake pair(MaFa, MbFb) and true pair (Fa, Fa'), since there is an interpolation transformation between the original real pair (Fa, Fa')  [easily
-         distinguishable by discriminators]
+        adding a random warping for fake pair(MaFa, MbFb) 
+        and true pair (Fa, Fa'), since there is an interpolation 
+        transformation between the original real pair (Fa, Fa')  
+        [easily distinguishable by discriminators]
         start: x y
         """
         Ph, Pw = self.patch_size
