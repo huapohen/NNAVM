@@ -21,8 +21,6 @@ from itertools import permutations
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 torch.backends.cuda.matmul.allow_tf32 = False
-
-random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
 torch.cuda.manual_seed(0)
@@ -43,12 +41,11 @@ class DataMakerTorch(nn.Module):
         self.perturb_pts_json_name = 'perturbed_points.json'
         self.detected_pts_json_name = 'detected_points.json'
         self.file_record_txt_name = 'image_names.txt'
-        self.base_dir = base_dir = os.path.join('dataset', 'data')  # in code root dir
+        self.base_dir = base_dir = os.path.join('dataset', 'data') # in code root dir
         self.threads_num = 32
         self.batch_size = bs = 32
         self.batch_size = self._init_make_batch_divisible(bs, self.threads_num)
-        self.batch_size_origin = self.batch_size
-        self.drop_last_mismatch_batch = True
+        self.drop_last_mismatch_batch = False
         self.mtp = MultiThreadsProcess()
         self.src_num_mode_key_name = EasyDict(
             multi='multiple_driving_images',
@@ -60,7 +57,8 @@ class DataMakerTorch(nn.Module):
         self.offset_pix_range = 15
         self.perturb_mode = 'uniform'  # randint
         # the idx=0 image don't perturb, and the idx=1 to idx=1000 images are perturbed
-        self.train_pertrubed_num = 1
+        self.gt_bev_pertrubed_num = 1
+        self.train_pertrubed_num = 10
         self.test_pertrubed_num = 2
         self.num_total_images = -1
         self.method = 'Axb'
@@ -78,7 +76,6 @@ class DataMakerTorch(nn.Module):
         #     shutil.rmtree(self.dataset_dir)
         os.makedirs(self.dataset_dir, exist_ok=True)
         self._init_json_key_names()
-        
         self._init_undistored_parameters()
         self._init_avm_calibrate_paramters()
         self.pt_src_fblr, self.pt_dst_fblr = self.read_points(self.index)
@@ -208,7 +205,6 @@ class DataMakerTorch(nn.Module):
         iteration = int(size / batch)
         batch_list = [batch] * iteration
         if size % batch != 0:
-            assert size % batch != self.batch_size_origin
             if not self.drop_last_mismatch_batch:
                 batch_list.append(size % batch)
                 iteration += 1
@@ -220,7 +216,9 @@ class DataMakerTorch(nn.Module):
             f' batch_size: {self.batch_size} \n' + \
             f' iteration: {iteration} \n' + \
             f' threads_num: {self.threads_num} \n' + \
+            f' gt_bev_pertrubed_num: {self.gt_bev_pertrubed_num} \n' + \
             f' train_pertrubed_num: {self.train_pertrubed_num} \n' + \
+            f' test_pertrubed_num: {self.test_pertrubed_num} \n' + \
             f' \n'
         )
         print(prt_str)
@@ -234,6 +232,7 @@ class DataMakerTorch(nn.Module):
                 dlt_homography_method="dlt_homography_method",
                 make_date="make_date",
                 random_mode="random_mode",
+                gt_bev_pertrubed_num="gt_bev_pertrubed_num",
                 train_pertrubed_num="train_pertrubed_num",
                 test_pertrubed_num="test_pertrubed_num",
                 camera_list="camera_list",
@@ -249,14 +248,18 @@ class DataMakerTorch(nn.Module):
         return
 
     def _init_mode(self, mode='train'):
-        if mode in ['train', 'gt_bev']:
+        print(f' ---------- init_mode: {mode} ---------- ')
+        if mode == 'gt_bev':
+            self.num_generated_points = self.gt_bev_pertrubed_num
+            self.delta_num = 0
+        elif mode in ['train']:
             self.num_generated_points = self.train_pertrubed_num
             self.delta_num = 0
         elif mode == 'test':
             self.num_generated_points = self.test_pertrubed_num
             self.delta_num = self.train_pertrubed_num
         else:
-            raise ValueError('support mode in [`train`. `test`]')
+            raise ValueError
         self.dataset_mode_dir = set_dir = os.path.join(self.dataset_dir, mode)
         if os.path.exists(set_dir):
             shutil.rmtree(set_dir)
@@ -1237,30 +1240,25 @@ class HomoTorchOP(nn.Module):
         if method == 'Axb':
             assert src_pt.shape[1] == 4
             assert dst_pt.shape[1] == 4
-        self.batch_size, self.nums_pt = src_pt.shape[0], src_pt.shape[1]
-        xy1 = torch.cat(
-            (src_pt, src_pt.new_ones(self.batch_size, self.nums_pt, 1)), dim=-1
-        )
-        xyu = torch.cat(
-            (xy1, xy1.new_zeros((self.batch_size, self.nums_pt, 3))), dim=-1
-        )
-        xyd = torch.cat(
-            (xy1.new_zeros((self.batch_size, self.nums_pt, 3)), xy1), dim=-1
-        )
-        M1 = torch.cat((xyu, xyd), dim=-1).view(self.batch_size, -1, 6)
-        M2 = torch.matmul(dst_pt.view(-1, 2, 1), src_pt.view(-1, 1, 2)).view(
-            self.batch_size, -1, 2
-        )
-        M3 = dst_pt.view(self.batch_size, -1, 1)
+        batch_size, num_pts = src_pt.shape[:2]
+        bs = batch_size
+        xy1 = torch.cat([src_pt, src_pt.new_ones(bs, num_pts, 1)], dim=-1)
+        xyu = torch.cat([xy1, xy1.new_zeros(bs, num_pts, 3)], dim=-1)
+        xyd = torch.cat([xy1.new_zeros(bs, num_pts, 3), xy1], dim=-1)
+        src_pt = src_pt.view(-1, 1, 2)
+        dst_pt = dst_pt.view(-1, 2, 1)
+        M1 = torch.cat([xyu, xyd], dim=-1).view(bs, -1, 6)
+        M2 = torch.matmul(dst_pt, src_pt).view(bs, -1, 2)
+        M3 = dst_pt.view(bs, -1, 1)
 
         if method == "Ax0":
-            A = torch.cat((M1, -M2, -M3), dim=-1)
+            A = torch.cat([M1, -M2, -M3], dim=-1)
             U, S, V = torch.svd(A)
             V = V.transpose(-2, -1).conj()
-            H = V[:, -1].view(self.batch_size, 3, 3)
-            H *= 1 / H[:, -1, -1].view(self.batch_size, 1, 1)
+            H = V[:, -1].view(bs, 3, 3)
+            H *= 1 / H[:, -1, -1].view(bs, 1, 1)
         elif method == "Axb":
-            A = torch.cat((M1, -M2), dim=-1)
+            A = torch.cat([M1, -M2], dim=-1)
             B = M3
             A_inv = torch.inverse(A)
             # 矩阵乘 用 gpu算出来结果不对
@@ -1269,13 +1267,8 @@ class HomoTorchOP(nn.Module):
             # mm = torch.matmul(A_inv.cpu(), B.cpu()).to(A)
             # 关闭这个：torch.backends.cuda.matmul.allow_tf32 = False
             mm = torch.matmul(A_inv, B)
-            H = torch.cat(
-                (
-                    mm.view(-1, 8),
-                    src_pt.new_ones((self.batch_size, 1)),
-                ),
-                1,
-            ).view(self.batch_size, 3, 3)
+            H = torch.cat([mm.view(-1, 8), A.new_ones(bs, 1)], 1)
+            H = H.view(bs, 3, 3)
 
         return H
 
@@ -1358,7 +1351,7 @@ class WarpTorchOP(nn.Module):
         v2 = pred_I2_index_warp[:, 1:2, ...]
         v1 = v1 / T_t
         v2 = v2 / T_t
-        pred_I2_index_warp = torch.cat((v1, v2), 1)
+        pred_I2_index_warp = torch.cat([v1, v2], 1)
         vgrid = patch_indices[:, :2, ...]
 
         flow = pred_I2_index_warp - vgrid
@@ -1469,7 +1462,8 @@ class WarpTorchOP(nn.Module):
         return output
 
     def forward(self, src, H):
-        flow, vgrid = self.get_flow_vgrid(H, self.grid, self.h, self.w, 1)
+        grid = self.grid[:src.shape[0]]
+        flow, vgrid = self.get_flow_vgrid(H, grid, self.h, self.w, 1)
         dst = self.warp_image(src, vgrid + flow)
 
         return dst
@@ -1485,8 +1479,9 @@ class VideoToFrames:
     ):
         self.videos_dir = os.path.join(base_dir, data_source_dir_name)
         videos_names = []
+        self.vid_dir_name_sign = '2022'
         for vid_name in os.listdir(self.videos_dir):
-            if '2022' in vid_name:
+            if self.vid_dir_name_sign in vid_name:
                 videos_names.append(vid_name)
         self.videos_names = sorted(videos_names)
         self.camera_list = ['front', 'back', 'left', 'right']
