@@ -47,6 +47,8 @@ class DataMakerTorch(nn.Module):
         self.threads_num = 32
         self.batch_size = bs = 32
         self.batch_size = self._init_make_batch_divisible(bs, self.threads_num)
+        self.batch_size_origin = self.batch_size
+        self.drop_last_mismatch_batch = True
         self.mtp = MultiThreadsProcess()
         self.src_num_mode_key_name = EasyDict(
             multi='multiple_driving_images',
@@ -206,8 +208,10 @@ class DataMakerTorch(nn.Module):
         iteration = int(size / batch)
         batch_list = [batch] * iteration
         if size % batch != 0:
-            batch_list.append(size % batch)
-            iteration += 1
+            assert size % batch != self.batch_size_origin
+            if not self.drop_last_mismatch_batch:
+                batch_list.append(size % batch)
+                iteration += 1
         prt_str = (
             f' \n' + \
             f' camera_list: {self.camera_fblr} \n' + \
