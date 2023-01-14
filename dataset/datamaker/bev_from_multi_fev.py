@@ -72,25 +72,27 @@ class DataMakerTorch(nn.Module):
         self.bev_dir = os.path.join(base_dir, 'bev', bev_mode)
         self.pts_path = os.path.join(base_dir, self.detected_pts_json_name)
         self.dataset_dir = os.path.join(self.dataset_sv_dir, version)
-        if os.path.exists(self.dataset_dir):
-            shutil.rmtree(self.dataset_dir)
+        # if os.path.exists(self.dataset_dir):
+        #     shutil.rmtree(self.dataset_dir)
         os.makedirs(self.dataset_dir, exist_ok=True)
         self._init_json_key_names()
-        self.homo_torch_op, self.warp_torch_op = self._init_torch_operation()
+        
         self._init_undistored_parameters()
         self._init_avm_calibrate_paramters()
         self.pt_src_fblr, self.pt_dst_fblr = self.read_points(self.index)
-        self._init_warp_to_bev()
-        self.batch_list, self.iteration = self._init_batch_and_iteration()
+        self.assign_sample_num = asn = -1
+        self.num_img_per_camera = nips = self._init_warp_to_bev(asn, bs)
+        self.batch_list, self.iteration = self._init_batch_and_iteration(bs, nips)
+        self.homo_torch_op, self.warp_torch_op = self._init_torch_operation(bs)
 
-    def _init_torch_operation(self):
+    def _init_torch_operation(self, batch_size):
         self.wh_bev_fblr = wh_fblr = {
             "front": [1078, 336],
             "back": [1078, 336],
             "left": [1172, 439],
             "right": [1172, 439],
         }
-        bs, is_gpu = self.batch_size, self.enable_cuda
+        bs, is_gpu = batch_size, self.enable_cuda
         self.homo_torch_op = HomoTorchOP(method=self.method)
         self.warp_torch_op = {}
         for x in self.camera_fblr:
@@ -98,7 +100,7 @@ class DataMakerTorch(nn.Module):
 
         return self.homo_torch_op, self.warp_torch_op
 
-    def _init_warp_to_bev(self):
+    def _init_warp_to_bev(self, assign_sample_num, batch_size):
         self.f2u_dir_name = 'fev2undist'  # indirectly
         # self.f2b_dir_name = 'fev2bev' # directly
         self.src_img_path_record_txt = os.path.join(
@@ -114,12 +116,18 @@ class DataMakerTorch(nn.Module):
             self.cam_img_dir_path = os.path.join(
                 self.multiple_undist_dir, self.any_camera
             )
-            self.cam_img_name_list = os.listdir(self.cam_img_dir_path)
-            self.num_img_per_camera = len(self.cam_img_name_list)
+            self.cam_img_name_list = cinl = os.listdir(self.cam_img_dir_path)
+            asm = assign_sample_num
+            assert len(cinl) > batch_size
+            asm = len(cinl) if min(asm, len(cinl)) <= 0 else asm
+            self.assign_sample_num = asm = max(asm, batch_size)
+            self.cam_img_name_list = self.cam_img_name_list[:asm]
+            num_img_per_camera = len(self.cam_img_name_list)
         else:
-            self.num_img_per_camera = 1
+            num_img_per_camera = 1
             self.single_fev_dir = os.path.join(self.base_dir, 'fev')
             self.single_undist_dir = os.path.join(self.base_dir, 'undist')
+        return num_img_per_camera
 
     def _init_avm_calibrate_paramters(self):
         self.calibrate = {
@@ -192,9 +200,9 @@ class DataMakerTorch(nn.Module):
             new_v += divisor
         return new_v
 
-    def _init_batch_and_iteration(self):
-        size = self.num_img_per_camera
-        batch = min(self.batch_size, size)
+    def _init_batch_and_iteration(self, batch_size, num_img_per_camera):
+        size = num_img_per_camera
+        batch = min(batch_size, size)
         iteration = int(size / batch)
         batch_list = [batch] * iteration
         if size % batch != 0:
@@ -204,7 +212,7 @@ class DataMakerTorch(nn.Module):
             f' \n' + \
             f' camera_list: {self.camera_fblr} \n' + \
             f' src_num_mode: {self.src_num_mode} \n' + \
-            f' num_img_per_camera: {self.num_img_per_camera} \n' + \
+            f' num_img_per_camera: {num_img_per_camera} \n' + \
             f' batch_size: {self.batch_size} \n' + \
             f' iteration: {iteration} \n' + \
             f' threads_num: {self.threads_num} \n' + \
@@ -246,7 +254,9 @@ class DataMakerTorch(nn.Module):
         else:
             raise ValueError('support mode in [`train`. `test`]')
         self.dataset_mode_dir = set_dir = os.path.join(self.dataset_dir, mode)
-        os.makedirs(set_dir, exist_ok=True)
+        if os.path.exists(set_dir):
+            shutil.rmtree(set_dir)
+        os.makedirs(set_dir)
         self.perturb_pts_path = os.path.join(set_dir, self.perturb_pts_json_name)
         self.generate_dir = os.path.join(set_dir, self.generate_dir_name)
 
