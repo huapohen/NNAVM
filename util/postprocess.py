@@ -64,6 +64,11 @@ def plot_iter_info(params, img):
 
 def plot_pt(params, img, pt_ori, pt_pred, pt_pert, img_gt, mode='gt'):
     '''suitable for unsupervise and supervise'''
+    # plot indicator first, otherwise `plot_op` will changes the picture
+    if mode == 'pred':
+        img = plot_indicator(params, pt_pred, pt_ori, img, img_gt)
+    elif mode == 'pert':
+        img = plot_indicator(params, pt_pert, pt_ori, img, img_gt)
     color = [[0, 0, 255], [0, 255, 0], [0, 255, 255]]
     for i, pt in enumerate([pt_ori, pt_pred, pt_pert]):
         if mode == 'pred' and i == 2:
@@ -73,10 +78,6 @@ def plot_pt(params, img, pt_ori, pt_pred, pt_pert, img_gt, mode='gt'):
         for k in range(len(pt_ori)):
             x, y = tuple(np.int32(pt)[k])
             cv2.circle(img, (x, y), 3, color[i], -1)
-    if mode == 'pred':
-        img = plot_indicator(params, pt_pred, pt_ori, img, img_gt)
-    elif mode == 'pert':
-        img = plot_indicator(params, pt_pert, pt_ori, img, img_gt)
     cv2.putText(img, mode, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (192, 192, 192), 2)
     if mode == 'bev_origin' and params.visualize_mode == 'train':
         img = plot_iter_info(params, img)
@@ -107,8 +108,11 @@ def plot_pt_unsupervised_kernel(params, pts, bevs_cam):
     img_ori = bevs_cam['bev_origin']
     imgs_cam = []
     for name, img in bevs_cam.items():
-        img = _plot_point(pt_ori, 'bev_origin', img)
         pt = pts[f'coords_{name}']
+        # plot indicator first, otherwise `plot_op` will changes the picture
+        if name != 'bev_origin':
+            img = plot_indicator(params, pt, pt_ori, img, img_ori)
+        img = _plot_point(pt_ori, 'bev_origin', img)
         img = _plot_point(pt, name, img)
         if name == 'bev_perturbed':
             n2 = 'bev_perturbed_pred'
@@ -121,8 +125,6 @@ def plot_pt_unsupervised_kernel(params, pts, bevs_cam):
         elif name == 'bev_origin':
             for ele in ['bev_perturbed', 'bev_perturbed_pred', 'bev_origin_pred']:
                 img = _plot_point(pts[f'coords_{ele}'], ele, img)
-        if name != 'bev_origin':
-            img = plot_indicator(params, pt, pt_ori, img, img_ori)
         elif params.visualize_mode == 'train':
             img = plot_iter_info(params, img)
         txt_info = (cv2.FONT_HERSHEY_SIMPLEX, 1, (192, 192, 192), 2)

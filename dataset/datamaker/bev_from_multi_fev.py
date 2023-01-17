@@ -27,9 +27,6 @@ torch.cuda.manual_seed(0)
 
 
 class DataMakerTorch(nn.Module):
-    '''
-    99%|███████████████████████████████████████████████████████▌| 124/125 [15:02<00:07,  7.28s/it]
-    '''
     def __init__(self, enable_cuda=True):
         super().__init__()
         self.dataset_root = '/home/data/lwb/data'
@@ -41,7 +38,7 @@ class DataMakerTorch(nn.Module):
         self.perturb_pts_json_name = 'perturbed_points.json'
         self.detected_pts_json_name = 'detected_points.json'
         self.file_record_txt_name = 'image_names.txt'
-        self.base_dir = base_dir = os.path.join('dataset', 'data') # in code root dir
+        self.code_data_dir = code_data_dir = os.path.join('dataset', 'data')
         self.threads_num = 32
         self.batch_size = bs = 32
         self.batch_size = self._init_make_batch_divisible(bs, self.threads_num)
@@ -69,8 +66,8 @@ class DataMakerTorch(nn.Module):
         # bev_mode = 'fev2bev' # directly
         self.perturbed_image_type = 'bev'
         self.perturbed_pipeline = bev_mode
-        self.bev_dir = os.path.join(base_dir, 'bev', bev_mode)
-        self.pts_path = os.path.join(base_dir, self.detected_pts_json_name)
+        self.bev_dir = os.path.join(code_data_dir, 'bev', bev_mode)
+        self.pts_path = os.path.join(code_data_dir, self.detected_pts_json_name)
         self.dataset_dir = os.path.join(self.dataset_sv_dir, version)
         # if os.path.exists(self.dataset_dir):
         #     shutil.rmtree(self.dataset_dir)
@@ -124,8 +121,8 @@ class DataMakerTorch(nn.Module):
             num_img_per_camera = len(self.cam_img_name_list)
         else:
             num_img_per_camera = 1
-            self.single_fev_dir = os.path.join(self.base_dir, 'fev')
-            self.single_undist_dir = os.path.join(self.base_dir, 'undist')
+            self.single_fev_dir = os.path.join(self.code_data_dir, 'fev')
+            self.single_undist_dir = os.path.join(self.code_data_dir, 'undist')
         return num_img_per_camera
 
     def _init_avm_calibrate_paramters(self):
@@ -209,46 +206,48 @@ class DataMakerTorch(nn.Module):
                 batch_list.append(size % batch)
                 iteration += 1
         prt_str = (
-            f' \n' + \
-            f' camera_list: {self.camera_fblr} \n' + \
-            f' src_num_mode: {self.src_num_mode} \n' + \
-            f' num_img_per_camera: {num_img_per_camera} \n' + \
-            f' batch_size: {self.batch_size} \n' + \
-            f' iteration: {iteration} \n' + \
-            f' threads_num: {self.threads_num} \n' + \
-            f' gt_bev_pertrubed_num: {self.gt_bev_pertrubed_num} \n' + \
-            f' train_pertrubed_num: {self.train_pertrubed_num} \n' + \
-            f' test_pertrubed_num: {self.test_pertrubed_num} \n' + \
             f' \n'
+            + f' camera_list: {self.camera_fblr} \n'
+            + f' src_num_mode: {self.src_num_mode} \n'
+            + f' num_img_per_camera: {num_img_per_camera} \n'
+            + f' batch_size: {self.batch_size} \n'
+            + f' iteration: {iteration} \n'
+            + f' threads_num: {self.threads_num} \n'
+            + f' gt_bev_pertrubed_num: {self.gt_bev_pertrubed_num} \n'
+            + f' train_pertrubed_num: {self.train_pertrubed_num} \n'
+            + f' test_pertrubed_num: {self.test_pertrubed_num} \n'
+            + f' \n'
         )
         print(prt_str)
         return batch_list, iteration
 
     def _init_json_key_names(self):
         self.key_name_pts_perturb = EasyDict(
-                dataset_version="dataset_version",
-                perturbed_image_type="perturbed_image_type",
-                perturbed_pipeline="perturbed_pipeline",
-                dlt_homography_method="dlt_homography_method",
-                make_date="make_date",
-                random_mode="random_mode",
-                gt_bev_pertrubed_num="gt_bev_pertrubed_num",
-                train_pertrubed_num="train_pertrubed_num",
-                test_pertrubed_num="test_pertrubed_num",
-                camera_list="camera_list",
-                offset_pixel_range="offset_pixel_range",
-                original_points="original_points",
-                perturbed_points_list="perturbed_points_list",
-                offset_list="offset_list",
+            dataset_version="dataset_version",
+            perturbed_image_type="perturbed_image_type",
+            perturbed_pipeline="perturbed_pipeline",
+            dlt_homography_method="dlt_homography_method",
+            make_date="make_date",
+            random_mode="random_mode",
+            gt_bev_pertrubed_num="gt_bev_pertrubed_num",
+            train_pertrubed_num="train_pertrubed_num",
+            test_pertrubed_num="test_pertrubed_num",
+            camera_list="camera_list",
+            offset_pixel_range="offset_pixel_range",
+            original_points="original_points",
+            perturbed_points_list="perturbed_points_list",
+            offset_list="offset_list",
         )
         self.key_name_pts_detect = EasyDict(
-                detected_points='detected_points',
-                corner_points='corner_points',
+            detected_points='detected_points',
+            corner_points='corner_points',
+            homo='homo',
         )
         return
 
     def _init_mode(self, mode='train'):
         print(f' ---------- init_mode: {mode} ---------- ')
+        self.dataset_init_mode = mode
         if mode == 'gt_bev':
             self.num_generated_points = self.gt_bev_pertrubed_num
             self.delta_num = 0
@@ -473,11 +472,11 @@ class DataMakerTorch(nn.Module):
         if src_fblr is None:
             src_fblr = self.read_image_fblr()
         for camera in self.camera_fblr:
-            save_dir = f"{self.generate_dir}/{camera}"
+            save_dir = os.path.join(self.generate_dir, camera)
             os.makedirs(save_dir, exist_ok=True)
             for i in range(self.delta_num, self.delta_num + self.num_generated_points):
                 # perturbed points on bev
-                idx = f'{i:04}' # fixed index format for generating perturbed points
+                idx = f'{i:04}'  # fixed index format for generating perturbed points
                 pt_perturbed = pts_perturb[camera][kn_.perturbed_points_list][idx]
                 pt_perturbed = torch.Tensor(pt_perturbed).reshape(1, -1, 2)
                 if self.enable_cuda:
@@ -513,6 +512,7 @@ class DataMakerTorch(nn.Module):
         def _postprocess(is_success):
             if not is_success:
                 raise Exception("imwrite error")
+            return
 
         for camera in self.camera_fblr:
             names = name_fblr[camera]
@@ -521,7 +521,7 @@ class DataMakerTorch(nn.Module):
             os.makedirs(save_dir, exist_ok=True)
             for k in range(self.delta_num, self.delta_num + self.num_generated_points):
                 # perturbed points on bev
-                idx = f'{k:04}' # fixed index format for generating perturbed points
+                idx = f'{k:04}'  # fixed index format for generating perturbed points
                 pt_perturbed = pts_perturb[camera][kn_.perturbed_points_list][idx]
                 pt_perturbed = torch.Tensor(pt_perturbed).reshape(1, -1, 2)
                 if self.enable_cuda:
@@ -531,7 +531,7 @@ class DataMakerTorch(nn.Module):
                 H = self.homo_torch_op(pt_undist, pt_perturbed)[0]
                 H_inv = torch.inverse(H).unsqueeze(0)
                 dst = self.warp_torch_op[camera](src_cam, H_inv)
-                dst = dst.transpose(1, 2).transpose(2, 3) # bchw -> bhwc
+                dst = dst.transpose(1, 2).transpose(2, 3)  # bchw -> bhwc
                 dst = dst.detach().cpu().numpy()
                 # save
                 input_values = (self.threads_num, dst, names, save_dir, k)
@@ -606,17 +606,39 @@ class DataMakerTorch(nn.Module):
 
     def shutil_copy(self):
         set_dir = self.dataset_mode_dir
+        code_data_dir = self.code_data_dir
+        kn_ = self.key_name_pts_detect
         shutil.copy(
-            'dataset/data/detected_points.json',
-            f'{set_dir}/detected_points.json',
+            os.path.join(code_data_dir, f'{kn_.detected_points}.json'),
+            os.path.join(set_dir, f'{kn_.detected_points}.json'),
         )
-        shutil.copy('dataset/data/homo.json', f'{set_dir}/homo.json')
+        shutil.copy(
+            os.path.join(code_data_dir, f'{kn_.homo}.json'),
+            os.path.join(set_dir, f'{kn_.homo}.json'),
+        )
         if self.src_num_mode == self.src_num_mode_key_name.single:
-            shutil.copytree('dataset/data/bev', f'{set_dir}/bev')
-            shutil.copytree('dataset/data/undist', f'{set_dir}/undist')
-            shutil.copytree('dataset/data/fev', f'{set_dir}/fev')
+            for name in ['bev', 'undist', 'fev']:
+                shutil.copytree(
+                    os.path.join(code_data_dir, name), os.path.join(set_dir, name)
+                )
         elif self.src_num_mode == self.src_num_mode_key_name.multi:
-            pass
+            if (
+                self.dataset_init_mode in ['train', 'test']
+                and self.perturbed_image_type == 'bev'
+                and self.perturbed_pipeline == 'undist2bev'
+            ):
+                src_undist_dir = os.path.join(
+                    self.dataset_sv_dir, 'fev2undist', 'undist'
+                )
+                dst_undist_dir = os.path.join(set_dir, 'undist')
+                src_bev_dir = os.path.join(self.dataset_dir, 'gt_bev', 'generate')
+                dst_bev_dir = os.path.join(set_dir, 'bev')
+                shutil.copytree(src_undist_dir, dst_undist_dir)
+                shutil.copytree(src_bev_dir, dst_bev_dir)
+            else:
+                raise Exception("TODO")
+        else:
+            raise ValueError
 
     def forward_warp_image(self, src_fblr, pt_src_fblr, pt_dst_fblr, is_save=False):
         # pt_src_fblr, pt_dst_fblr = self.read_points(self.index)
@@ -634,7 +656,7 @@ class DataMakerTorch(nn.Module):
                 dst = dst.detach().cpu()
                 dst = dst.squeeze(0).numpy().transpose((1, 2, 0))
                 dst = cv2.cvtColor(dst, cv2.COLOR_RGB2BGR)
-                save_dir = os.path.join(self.base_dir, 'warp', camera)
+                save_dir = os.path.join(self.code_data_dir, 'warp', camera)
                 os.makedirs(save_dir, exist_ok=True)
                 path = f"{save_dir}/0001.jpg"
                 cv2.imwrite(path, dst)
@@ -852,9 +874,9 @@ class DataMakerCV2:
 
     def random_perturb(self, start):
         """
-        adding a random warping for fake pair(MaFa, MbFb) 
-        and true pair (Fa, Fa'), since there is an interpolation 
-        transformation between the original real pair (Fa, Fa')  
+        adding a random warping for fake pair(MaFa, MbFb)
+        and true pair (Fa, Fa'), since there is an interpolation
+        transformation between the original real pair (Fa, Fa')
         [easily distinguishable by discriminators]
         start: x y
         """
@@ -1143,12 +1165,12 @@ class ThreadsOP(threading.Thread):
             return None
 
 
-class MultiThreadsProcess():
+class MultiThreadsProcess:
     '''
     output: result_list
     class `ThreadsOP`:
         which is used for single thread process
-    
+
     func_preprocess:
         input: tuple(i, j, *input_values)
         output: tuple(v1, ...) at least one return value
@@ -1158,7 +1180,7 @@ class MultiThreadsProcess():
     func_postprocess:
         input: None or tuple(v1, ...)
         output: None
-        
+
     method of applicatin:
         step 1. init class
             self.mtp = MultiThreadsProcess()
@@ -1215,8 +1237,9 @@ class MultiThreadsProcess():
                 # postprocess
                 res = thr.get_result()
                 if func_postprocess is not None:
-                    func_postprocess(res)
-                result_list.append(res)
+                    result_list.append(func_postprocess(res))
+                else:
+                    result_list.append(res)
 
         return result_list
 
@@ -1462,7 +1485,7 @@ class WarpTorchOP(nn.Module):
         return output
 
     def forward(self, src, H):
-        grid = self.grid[:src.shape[0]]
+        grid = self.grid[: src.shape[0]]
         flow, vgrid = self.get_flow_vgrid(H, grid, self.h, self.w, 1)
         dst = self.warp_image(src, vgrid + flow)
 
@@ -1574,7 +1597,8 @@ if __name__ == "__main__":
     elif run_mode == 'torch':
         generator = DataMakerTorch(enable_cuda=True)
         # for mode in ['train', 'test']:
-        for mode in ['gt_bev']:
+        # for mode in ['gt_bev']:
+        for mode in ['gt_bev', 'train', 'test']:
             generator._init_mode(mode)
             pts = generator.generate_perturbed_points()
             bs_list = generator.batch_list

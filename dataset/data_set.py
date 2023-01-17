@@ -2,9 +2,11 @@ import os
 import sys
 import cv2
 import json
+import ipdb
 import torch
 import random
 import numpy as np
+from easydict import EasyDict
 from torchvision import transforms as T
 from torchvision.transforms import ToTensor
 from torch.utils.data import Dataset
@@ -19,6 +21,8 @@ class DatasetPipeline(Dataset):
             self.data_ratio = params.train_data_ratio
         else:
             self.data_ratio = params.test_data_ratio
+        self.src_num_mode = params.src_num_mode
+        self.src_num_mode_key_name = EasyDict(params.src_num_mode_key_name)
         self.camera_list = params.camera_list
         random.seed(params.seed)
         self.data_sample = []
@@ -98,9 +102,9 @@ class DatasetPipeline(Dataset):
             data['coords_bev_origin'] = pts2
             data['coords_bev_perturbed'] = pts3
         if 'bev_origin' in task_mode:
-            data['bev_origin'] = self.get_bev_origin(base_path)
+            data['bev_origin'] = self.get_bev_origin(base_path, name)
         if 'undist' in task_mode:
-            data['undist'] = self.get_undist(base_path)
+            data['undist'] = self.get_undist(base_path, name)
         if 'bev_perturbed' in task_mode:
             data['bev_perturbed'] = self.get_bev_perturbed(base_path, name)
         if 'name' in task_mode:
@@ -115,28 +119,66 @@ class DatasetPipeline(Dataset):
         set_name = base_path.split(os.sep)[-2]
         pert_pts = self.perturbed_pts[set_name]
         offset_fblr = []
+        if self.src_num_mode == self.src_num_mode_key_name.single:
+            which_offset = name  # '0000', '0001'
+        elif self.src_num_mode == self.src_num_mode_key_name.multi:
+            which_offset = name.split("_")[-1][1:]  # 'p0000', 'p0001'
+        else:
+            raise ValueError
         for camera in self.camera_list:
-            offset = pert_pts[camera]['offset_list'][name]
+            offset = pert_pts[camera]['offset_list'][which_offset]
             offset = np.asarray(offset)
             offset_fblr.append(torch.from_numpy(offset).float())
         return offset_fblr
 
-    def get_bev_origin(self, base_path):
+    def get_bev_origin(self, base_path, name):
         bev_ori_fblr = []
-        for camera in self.camera_list:
-            img = cv2.imread(f'{base_path}/bev/{self.params.bev_mode}/{camera}.png')
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            img = torch.from_numpy(img).unsqueeze(0)
-            bev_ori_fblr.append(img)
+        if self.src_num_mode == self.src_num_mode_key_name.single:
+            for camera in self.camera_list:
+                img_path = os.path.join(
+                    base_path, 'bev', self.params.bev_mode, f'{camera}.png'
+                )
+                img = cv2.imread(img_path)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                img = torch.from_numpy(img).unsqueeze(0)
+                bev_ori_fblr.append(img)
+        elif self.src_num_mode == self.src_num_mode_key_name.multi:
+            name_ori = name.split('_p')[0] + '_p0000'
+            for camera in self.camera_list:
+                name = f'{name_ori}.{self.params.train_image_type}'
+                img_path = os.path.join(base_path, 'bev', camera, name)
+                ori = cv2.imread(img_path)
+                ori = cv2.cvtColor(ori, cv2.COLOR_BGR2GRAY)
+                ori = torch.from_numpy(ori).unsqueeze(0)
+                bev_ori_fblr.append(ori)
+        else:
+            raise ValueError
         return bev_ori_fblr
 
-    def get_undist(self, base_path):
+    def get_undist(self, base_path, name):
         undist_fblr = []
-        for camera in self.camera_list:
-            img = cv2.imread(f'{base_path}/undist/{camera}.jpg')
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            img = torch.from_numpy(img).unsqueeze(0)
-            undist_fblr.append(img)
+        if self.src_num_mode == self.src_num_mode_key_name.single:
+            for camera in self.camera_list:
+                img_path = os.path.join(base_path, 'undist', f'{camera}.jpg')
+                img = cv2.imread(img_path)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                img = torch.from_numpy(img).unsqueeze(0)
+                undist_fblr.append(img)
+        elif self.src_num_mode == self.src_num_mode_key_name.multi:
+            name_ori = name.split('_p')[0]
+            for camera in self.camera_list:
+                name = f'{name_ori}.{self.params.train_image_type}'
+                img_path = os.path.join(base_path, 'undist', camera, name)
+                img = cv2.imread(img_path)
+                if self.params.scale_undist != 1.0:
+                    wh = img.shape[:2][::-1]
+                    wh = tuple([int(x * self.params.scale_undist) for x in wh])
+                    img = cv2.resize(img, wh, interpolation=cv2.INTER_AREA)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                img = torch.from_numpy(img).unsqueeze(0)
+                undist_fblr.append(img)
+        else:
+            raise ValueError
         return undist_fblr
 
     def get_bev_perturbed(self, base_path, name):
@@ -155,11 +197,16 @@ class DatasetPipeline(Dataset):
         return bev_perturbed
 
     def get_coords(self, base_path, name):
-        with open(f'{base_path}/detected_points.json', 'r') as f:
+        det_pts_path = os.path.join(base_path, 'detected_points.json')
+        with open(det_pts_path, 'r') as f:
             pts = json.load(f)
+        if self.src_num_mode == self.src_num_mode_key_name.single:
+            which_point = name
+        elif self.src_num_mode == self.src_num_mode_key_name.multi:
+            which_point = name.split("_")[-1][1:]
         src_coords, dst_coords = [], []
         for camera in self.params.camera_list:
-            index = [0, 3, 4, 7]
+            index = self.params.perturbed_points_index
             pt_src = pts["detected_points"][camera]
             pt_dst = pts["corner_points"][camera]
             pt_src = [[pt_src[i * 2], pt_src[i * 2 + 1]] for i in index]
@@ -171,11 +218,12 @@ class DatasetPipeline(Dataset):
         src_coords = torch.stack(src_coords)
         dst_coords = torch.stack(dst_coords)
         #
-        with open(f'{base_path}/perturbed_points.json', 'r') as f:
+        pert_pts_path = os.path.join(base_path, 'perturbed_points.json')
+        with open(pert_pts_path, 'r') as f:
             pert = json.load(f)
         perturbed_coords = []
         for camera in self.params.camera_list:
-            pt = pert[camera]['perturbed_points_list'][name]
+            pt = pert[camera]['perturbed_points_list'][which_point]
             pt = torch.Tensor(pt).reshape(-1, 2)
             perturbed_coords.append(pt)
         return src_coords, dst_coords, perturbed_coords
