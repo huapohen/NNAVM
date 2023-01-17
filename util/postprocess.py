@@ -112,6 +112,8 @@ def plot_pt_unsupervised_kernel(params, pts, bevs_cam):
         # plot indicator first, otherwise `plot_op` will changes the picture
         if name != 'bev_origin':
             img = plot_indicator(params, pt, pt_ori, img, img_ori)
+        elif params.visualize_mode == 'train':
+            img = plot_iter_info(params, img)
         img = _plot_point(pt_ori, 'bev_origin', img)
         img = _plot_point(pt, name, img)
         if name == 'bev_perturbed':
@@ -125,8 +127,6 @@ def plot_pt_unsupervised_kernel(params, pts, bevs_cam):
         elif name == 'bev_origin':
             for ele in ['bev_perturbed', 'bev_perturbed_pred', 'bev_origin_pred']:
                 img = _plot_point(pts[f'coords_{ele}'], ele, img)
-        elif params.visualize_mode == 'train':
-            img = plot_iter_info(params, img)
         txt_info = (cv2.FONT_HERSHEY_SIMPLEX, 1, (192, 192, 192), 2)
         cv2.putText(img, name[4:], (50, 50), *txt_info)
         cv2.putText(img, color_name[name], (50, 100), *txt_info)
