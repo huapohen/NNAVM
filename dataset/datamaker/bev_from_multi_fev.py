@@ -27,6 +27,28 @@ torch.cuda.manual_seed(0)
 
 
 class DataMakerTorch(nn.Module):
+    '''
+    Deep Learning AVM Dataset Maker:
+        torch GPU version: calc homo and warp imgs
+        multi threads version: read and write images
+        support: from undist to bev
+        todo: from fev to bev
+    Pipeline:
+        after class instance initialization, run `def _init_dataset_mode_info`
+    Application:
+        generator = DataMakerTorch(enable_cuda=True)
+        # for mode in ['gt_bev']:
+        # for mode in ['train', 'test']:
+        for mode in ['gt_bev', 'train', 'test']:
+            generator._init_dataset_mode_info(mode)
+            pts = generator.generate_perturbed_points()
+            bs_list = generator.batch_size_list
+            for i in tqdm(range(generator.iteration)):
+                src, name = generator.get_src_images(i, bs_list[i])
+                generator.warp_perturbed_image(pts, src, name, bs_list[i])
+            generator.shutil_copy()
+    '''
+
     def __init__(self, enable_cuda=True):
         super().__init__()
         self.dataset_root = '/home/data/lwb/data'
@@ -41,7 +63,7 @@ class DataMakerTorch(nn.Module):
         self.code_data_dir = code_data_dir = os.path.join('dataset', 'data')
         self.threads_num = 32
         self.batch_size = bs = 32
-        self.batch_size = self._init_make_batch_divisible(bs, self.threads_num)
+        self.batch_size = bs = self._init_make_batch_divisible(bs, self.threads_num)
         self.drop_last_mismatch_batch = False
         self.mtp = MultiThreadsProcess()
         self.src_num_mode_key_name = EasyDict(
@@ -57,9 +79,11 @@ class DataMakerTorch(nn.Module):
         self.gt_bev_pertrubed_num = 1
         self.train_pertrubed_num = 10
         self.test_pertrubed_num = 2
+        self.is_split_videos_train_test = True
+        self.split_test_ratio = 0.1
         self.num_total_images = -1
-        self.method = 'Axb'
-        self.index = [0, 3, 4, 7]  # four corners
+        self.dlt_homo_method = 'Axb'
+        self.perturbed_points_index = index = [0, 3, 4, 7]  # four corners
         self.camera_fblr = ["front", "back", "left", "right"]
         self.align_fblr = True  # fblr four cameras
         bev_mode = 'undist2bev'  # indirectly
@@ -75,55 +99,9 @@ class DataMakerTorch(nn.Module):
         self._init_json_key_names()
         self._init_undistored_parameters()
         self._init_avm_calibrate_paramters()
-        self.pt_src_fblr, self.pt_dst_fblr = self.read_points(self.index)
-        self.assign_sample_num = asn = -1
-        self.num_img_per_camera = nips = self._init_warp_to_bev(asn, bs)
-        self.batch_list, self.iteration = self._init_batch_and_iteration(bs, nips)
+        self.pt_src_fblr, self.pt_dst_fblr = self.read_points(index)
         self.homo_torch_op, self.warp_torch_op = self._init_torch_operation(bs)
-
-    def _init_torch_operation(self, batch_size):
-        self.wh_bev_fblr = wh_fblr = {
-            "front": [1078, 336],
-            "back": [1078, 336],
-            "left": [1172, 439],
-            "right": [1172, 439],
-        }
-        bs, is_gpu = batch_size, self.enable_cuda
-        self.homo_torch_op = HomoTorchOP(method=self.method)
-        self.warp_torch_op = {}
-        for x in self.camera_fblr:
-            self.warp_torch_op[x] = WarpTorchOP(bs, *wh_fblr[x], 0, is_gpu)
-
-        return self.homo_torch_op, self.warp_torch_op
-
-    def _init_warp_to_bev(self, assign_sample_num, batch_size):
-        self.f2u_dir_name = 'fev2undist'  # indirectly
-        # self.f2b_dir_name = 'fev2bev' # directly
-        self.src_img_path_record_txt = os.path.join(
-            self.dataset_sv_dir, self.f2u_dir_name, self.file_record_txt_name
-        )
-        if self.src_num_mode == self.src_num_mode_key_name.multi:
-            self.multiple_undist_dir = os.path.join(
-                self.dataset_sv_dir, self.f2u_dir_name, 'undist'
-            )
-            assert self.align_fblr == True, 'only support four cameras'
-            # all cameras have the same number of images
-            self.any_camera = 'front'
-            self.cam_img_dir_path = os.path.join(
-                self.multiple_undist_dir, self.any_camera
-            )
-            self.cam_img_name_list = cinl = os.listdir(self.cam_img_dir_path)
-            asm = assign_sample_num
-            assert len(cinl) > batch_size
-            asm = len(cinl) if min(asm, len(cinl)) <= 0 else asm
-            self.assign_sample_num = asm = max(asm, batch_size)
-            self.cam_img_name_list = self.cam_img_name_list[:asm]
-            num_img_per_camera = len(self.cam_img_name_list)
-        else:
-            num_img_per_camera = 1
-            self.single_fev_dir = os.path.join(self.code_data_dir, 'fev')
-            self.single_undist_dir = os.path.join(self.code_data_dir, 'undist')
-        return num_img_per_camera
+        self.assign_sample_num = -1
 
     def _init_avm_calibrate_paramters(self):
         self.calibrate = {
@@ -196,14 +174,108 @@ class DataMakerTorch(nn.Module):
             new_v += divisor
         return new_v
 
+    def _init_torch_operation(self, batch_size):
+        self.wh_bev_fblr = wh_fblr = {
+            "front": [1078, 336],
+            "back": [1078, 336],
+            "left": [1172, 439],
+            "right": [1172, 439],
+        }
+        bs, is_gpu = batch_size, self.enable_cuda
+        self.homo_torch_op = HomoTorchOP(method=self.dlt_homo_method)
+        self.warp_torch_op = {}
+        for x in self.camera_fblr:
+            self.warp_torch_op[x] = WarpTorchOP(bs, *wh_fblr[x], 0, is_gpu)
+
+        return self.homo_torch_op, self.warp_torch_op
+
+    def _init_split_train_test_videos(self, src_num_mode, dataset_init_mode):
+        if src_num_mode != self.src_num_mode_key_name.multi:
+            return []
+        self.f2u_dir_name = 'fev2undist'  # indirectly
+        # self.f2b_dir_name = 'fev2bev' # directly
+        self.source_videos_list = [
+            '20221205135519',
+            '20221205135629',
+            '20221205135816',
+            '20221205140313',
+            '20221205140456',
+            '20221205140548',
+            '20221205140642',
+            '20221205141246',
+            '20221205141401',
+            '20221205141455',
+        ]
+        self.multiple_undist_dir = os.path.join(
+            self.dataset_sv_dir, self.f2u_dir_name, 'undist'
+        )
+        assert self.align_fblr == True, 'only support four cameras'
+        # all cameras have the same number of images
+        self.any_camera = 'front'
+        self.cam_img_dir_path = os.path.join(self.multiple_undist_dir, self.any_camera)
+        # do this: os.listdir(filter )
+        cam_img_name_list = cinl = os.listdir(self.cam_img_dir_path)
+        if dataset_init_mode in ['train', 'test'] and self.is_split_videos_train_test:
+            vid_num = self.split_test_ratio * len(self.source_videos_list)
+            self.test_vid_num = max(1, int(vid_num))
+            self.test_vid_names = self.source_videos_list[-self.test_vid_num :]
+            self.train_vid_names = self.source_videos_list[: -self.test_vid_num]
+            if dataset_init_mode == 'train':
+                vid_names = self.train_vid_names
+            elif dataset_init_mode == 'test':
+                vid_names = self.test_vid_names
+            new_cinl = list(filter(lambda x: x.split('_')[0] in vid_names, cinl))
+            cam_img_name_list = new_cinl
+        return cam_img_name_list
+
+    def _init_src_paths_warp_to_bev(
+        self, assign_sample_num, batch_size, cam_img_name_list
+    ):
+        self.src_img_path_record_txt = os.path.join(
+            self.dataset_sv_dir, self.f2u_dir_name, self.file_record_txt_name
+        )
+        if self.src_num_mode == self.src_num_mode_key_name.multi:
+            cinl = cam_img_name_list
+            asm = assign_sample_num
+            assert len(cinl) > batch_size
+            asm = len(cinl) if min(asm, len(cinl)) <= 0 else asm
+            self.assign_sample_num = asm = max(asm, batch_size)
+            self.cam_img_name_list = cinl[:asm]
+            num_img_per_camera = len(self.cam_img_name_list)
+        else:
+            num_img_per_camera = 1
+            self.single_fev_dir = os.path.join(self.code_data_dir, 'fev')
+            self.single_undist_dir = os.path.join(self.code_data_dir, 'undist')
+        return num_img_per_camera
+
+    def _init_get_perturbed_points_info(self, dataset_init_mode):
+        mode = dataset_init_mode
+        if mode == 'gt_bev':
+            self.num_generated_points = self.gt_bev_pertrubed_num
+            self.delta_num = 0
+        elif mode in ['train']:
+            self.num_generated_points = self.train_pertrubed_num
+            self.delta_num = 0
+        elif mode == 'test':
+            self.num_generated_points = self.test_pertrubed_num
+            self.delta_num = self.train_pertrubed_num
+        else:
+            raise ValueError
+        self.dataset_mode_dir = set_dir = os.path.join(self.dataset_dir, mode)
+        if os.path.exists(set_dir):
+            shutil.rmtree(set_dir)
+        os.makedirs(set_dir)
+        self.perturb_pts_path = os.path.join(set_dir, self.perturb_pts_json_name)
+        self.generate_dir = os.path.join(set_dir, self.generate_dir_name)
+
     def _init_batch_and_iteration(self, batch_size, num_img_per_camera):
         size = num_img_per_camera
         batch = min(batch_size, size)
         iteration = int(size / batch)
-        batch_list = [batch] * iteration
+        batch_size_list = [batch] * iteration
         if size % batch != 0:
             if not self.drop_last_mismatch_batch:
-                batch_list.append(size % batch)
+                batch_size_list.append(size % batch)
                 iteration += 1
         prt_str = (
             f' \n'
@@ -219,7 +291,7 @@ class DataMakerTorch(nn.Module):
             + f' \n'
         )
         print(prt_str)
-        return batch_list, iteration
+        return batch_size_list, iteration
 
     def _init_json_key_names(self):
         self.key_name_pts_perturb = EasyDict(
@@ -245,26 +317,18 @@ class DataMakerTorch(nn.Module):
         )
         return
 
-    def _init_mode(self, mode='train'):
-        print(f' ---------- init_mode: {mode} ---------- ')
+    def _init_dataset_mode_info(self, mode='train'):
+        assert mode in ['gt_bev', 'train', 'test']
+        print(f'\n ---------- init_mode: {mode} ---------- ')
         self.dataset_init_mode = mode
-        if mode == 'gt_bev':
-            self.num_generated_points = self.gt_bev_pertrubed_num
-            self.delta_num = 0
-        elif mode in ['train']:
-            self.num_generated_points = self.train_pertrubed_num
-            self.delta_num = 0
-        elif mode == 'test':
-            self.num_generated_points = self.test_pertrubed_num
-            self.delta_num = self.train_pertrubed_num
-        else:
-            raise ValueError
-        self.dataset_mode_dir = set_dir = os.path.join(self.dataset_dir, mode)
-        if os.path.exists(set_dir):
-            shutil.rmtree(set_dir)
-        os.makedirs(set_dir)
-        self.perturb_pts_path = os.path.join(set_dir, self.perturb_pts_json_name)
-        self.generate_dir = os.path.join(set_dir, self.generate_dir_name)
+        # source images info
+        snm = self.src_num_mode
+        self.cam_img_name_list = cinl = self._init_split_train_test_videos(snm, mode)
+        asn, bs = self.assign_sample_num, self.batch_size
+        self.num_img_per_camera = nips = self._init_src_paths_warp_to_bev(asn, bs, cinl)
+        self.batch_size_list, self.iteration = self._init_batch_and_iteration(bs, nips)
+        # perturbed points info
+        self._init_get_perturbed_points_info(mode)
 
     def get_src_images(self, idx=None, batch_size=None, mode=None, align_fblr=None):
 
@@ -377,9 +441,11 @@ class DataMakerTorch(nn.Module):
             elif random_mode == 'uniform':
                 offset = np.random.uniform(-1 * _pix, _pix, pts.shape)
             else:
+                # TODO
                 raise ValueError
             if i == self.delta_num:
-                offset = np.zeros_like(pts)
+                if self.dataset_init_mode in ['gt_bev', 'train']:
+                    offset = np.zeros_like(pts)  # test don't need
             new_pt = gen + offset
             idx = f'{i:04}'
             gen_list[idx] = new_pt.tolist()
@@ -401,7 +467,7 @@ class DataMakerTorch(nn.Module):
             kn1_.dataset_version: self.dataset_version,
             kn1_.perturbed_image_type: self.perturbed_image_type,
             kn1_.perturbed_pipeline: self.perturbed_pipeline,
-            kn1_.dlt_homography_method: self.method,
+            kn1_.dlt_homography_method: self.dlt_homo_method,
             kn1_.make_date: time.strftime('%z %Y-%m-%d %H:%M:%S', time.localtime()),
             kn1_.random_mode: self.perturb_mode,
             kn1_.train_pertrubed_num: self.train_pertrubed_num,
@@ -409,9 +475,10 @@ class DataMakerTorch(nn.Module):
             kn1_.camera_list: self.camera_fblr,
         }
         print(pts_perturb)
-        print(f'dataset_dir: {self.dataset_dir} \n')
+        print(f'dataset_dir:  {self.dataset_dir}')
+        print(f'dataset mode: {self.dataset_init_mode} \n')
         if index is None:
-            index = self.index
+            index = self.perturbed_points_index
         for camera in self.camera_fblr:
             # default points: bev
             pt_ori = pts[kn2_.corner_points][camera]
@@ -435,7 +502,7 @@ class DataMakerTorch(nn.Module):
         pt_src_fblr = {}
         pt_dst_fblr = {}
         if index is None:
-            index = self.index
+            index = self.perturbed_points_index
         for camera in self.camera_fblr:
             pt_src = pts[kn_.detected_points][camera]
             pt_dst = pts[kn_.corner_points][camera]
@@ -641,7 +708,7 @@ class DataMakerTorch(nn.Module):
             raise ValueError
 
     def forward_warp_image(self, src_fblr, pt_src_fblr, pt_dst_fblr, is_save=False):
-        # pt_src_fblr, pt_dst_fblr = self.read_points(self.index)
+        # pt_src_fblr, pt_dst_fblr = self.read_points(self.perturbed_points_index)
         # src_fblr = self.read_image_fblr()
         dst_fblr = []
         for camera in self.camera_fblr:
@@ -1247,7 +1314,7 @@ class MultiThreadsProcess:
 class HomoTorchOP(nn.Module):
     def __init__(self, method='Axb'):
         super().__init__()
-        self.method = method
+        self.dlt_homo_method = method
 
     def dlt_homo(self, src_pt, dst_pt, method="Axb"):
         """
@@ -1257,6 +1324,7 @@ class HomoTorchOP(nn.Module):
                     Ax0 (SVD) >= 4 pair points, 4,6,8
         :return: Homography, shape: (batch, 3, 3)
         """
+        method = self.dlt_homo_method
         assert method in ["Ax0", "Axb"]
         assert src_pt.shape[1] >= 4
         assert dst_pt.shape[1] >= 4
@@ -1297,7 +1365,7 @@ class HomoTorchOP(nn.Module):
 
     def forward(self, src_pt, dst_pt):
 
-        H = self.dlt_homo(src_pt, dst_pt, self.method)
+        H = self.dlt_homo(src_pt, dst_pt, self.dlt_homo_method)
 
         return H
 
@@ -1596,12 +1664,12 @@ if __name__ == "__main__":
 
     elif run_mode == 'torch':
         generator = DataMakerTorch(enable_cuda=True)
-        # for mode in ['train', 'test']:
         # for mode in ['gt_bev']:
-        for mode in ['gt_bev', 'train', 'test']:
-            generator._init_mode(mode)
+        # for mode in ['gt_bev', 'train', 'test']:
+        for mode in ['train', 'test']:
+            generator._init_dataset_mode_info(mode)
             pts = generator.generate_perturbed_points()
-            bs_list = generator.batch_list
+            bs_list = generator.batch_size_list
             for i in tqdm(range(generator.iteration)):
                 src, name = generator.get_src_images(i, bs_list[i])
                 generator.warp_perturbed_image(pts, src, name, bs_list[i])
