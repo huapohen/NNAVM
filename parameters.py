@@ -24,11 +24,11 @@ def train_config(cfg):
     cfg.camera_list = ["front"]
     # cfg.camera_list = ["front", 'back']
     # cfg.camera_list = ["front", 'back', 'left', 'right']
-    cfg.exp_id = 1
-    cfg.gpu_used = '7'
+    cfg.exp_id = 2
+    cfg.gpu_used = '2'
     cfg.num_workers = 16
     cfg.train_batch_size = 32
-    cfg.num_epochs = 100
+    cfg.num_epochs = 24
     cfg.train_data_ratio = [["v3", 1]]
     # cfg.src_num_mode = "single_calibrate_image"
     cfg.src_num_mode = "multiple_driving_images"

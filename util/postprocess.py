@@ -88,14 +88,14 @@ def plot_pt_unsupervised_kernel(params, pts, bevs_cam):
     color = {
         'bev_perturbed': (0, 255, 255),
         'bev_perturbed_pred': (0, 128, 255),
-        'bev_origin': (0, 0, 255),
         'bev_origin_pred': (0, 255, 0),
+        'bev_origin': (0, 0, 255),
     }
     color_name = {
         'bev_perturbed': 'yellow',
         'bev_perturbed_pred': 'orange',
-        'bev_origin': 'red',
         'bev_origin_pred': 'green',
+        'bev_origin': 'red',
     }
 
     def _plot_point(pt, name, img):
@@ -131,6 +131,7 @@ def plot_pt_unsupervised_kernel(params, pts, bevs_cam):
         cv2.putText(img, name[4:], (50, 50), *txt_info)
         cv2.putText(img, color_name[name], (50, 100), *txt_info)
         imgs_cam.append(img)
+
     return imgs_cam
 
 
@@ -262,8 +263,8 @@ def visualize_unsupervised_kernel(params, data):
     pt_name_list = [
         'coords_bev_perturbed',  # supervised info
         'coords_bev_perturbed_pred',
-        'coords_bev_origin',
         'coords_bev_origin_pred',  # supervised info
+        'coords_bev_origin',
     ]
     pts = {}
     for name in pt_name_list:
@@ -271,8 +272,8 @@ def visualize_unsupervised_kernel(params, data):
     bev_name_list = [
         'bev_perturbed',
         'bev_perturbed_pred',
-        'bev_origin',
         'bev_origin_pred',
+        'bev_origin',  # put it at the end for drawing the training infos
     ]
     bevs = {}
     for name in bev_name_list:
