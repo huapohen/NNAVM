@@ -703,7 +703,8 @@ class DataMakerTorch(nn.Module):
                 shutil.copytree(src_undist_dir, dst_undist_dir)
                 shutil.copytree(src_bev_dir, dst_bev_dir)
             else:
-                raise Exception("TODO")
+                # TODO
+                pass
         else:
             raise ValueError
 
@@ -1665,8 +1666,8 @@ if __name__ == "__main__":
     elif run_mode == 'torch':
         generator = DataMakerTorch(enable_cuda=True)
         # for mode in ['gt_bev']:
-        # for mode in ['gt_bev', 'train', 'test']:
-        for mode in ['train', 'test']:
+        # for mode in ['train', 'test']:
+        for mode in ['gt_bev', 'train', 'test']:
             generator._init_dataset_mode_info(mode)
             pts = generator.generate_perturbed_points()
             bs_list = generator.batch_size_list
