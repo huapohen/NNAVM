@@ -170,7 +170,7 @@ def visualize_supervised(params, data):
         os.makedirs(sv_dir, exist_ok=True)
         for j in range(num):
             undist_cv2 = undist[i][j].detach().cpu().numpy().transpose((1, 2, 0))
-            h_this = homo[i : (i + 1) * batch_size][j]
+            h_this = homo[i * batch_size : (i + 1) * batch_size][j]
             homo_u2b_cv2 = h_this.detach().cpu().numpy()
             wh = tuple(params.wh_bev_fblr[cam])
             img_cv2 = cv2.warpPerspective(
@@ -185,9 +185,9 @@ def visualize_supervised(params, data):
             img_cv2 = cv2.cvtColor(img_cv2, cv2.COLOR_GRAY2BGR)
             img_torch = cv2.cvtColor(img_torch, cv2.COLOR_GRAY2BGR)
             img_pert = cv2.cvtColor(img_pert, cv2.COLOR_GRAY2BGR)
-            pt_ori = pts_ori[i : (i + 1) * batch_size][j]
-            pt_pred = pts_pred[i : (i + 1) * batch_size][j]
-            pt_pert = pts_pert[i : (i + 1) * batch_size][j]
+            pt_ori = pts_ori[i * batch_size : (i + 1) * batch_size][j]
+            pt_pred = pts_pred[i * batch_size : (i + 1) * batch_size][j]
+            pt_pert = pts_pert[i * batch_size : (i + 1) * batch_size][j]
             img_gt = plot_pt(params, img_gt, pt_ori, pt_pred, pt_pert, img_gt, 'gt')
             img_cv2 = plot_pt(params, img_cv2, pt_ori, pt_pred, pt_pert, img_gt, 'pred')
             img_torch = plot_pt(
@@ -282,13 +282,14 @@ def visualize_unsupervised_kernel(params, data):
     imgs = []
     for i, cam in enumerate(params.camera_list):
         for j in range(num):
+            pts_cam = {}
             for k, v in pts.items():
-                pts[k] = v[i : (i + 1) * batch_size][j]
+                pts_cam[k] = v[i * batch_size : (i + 1) * batch_size][j]
             bevs_cam = {}
             for k, v in bevs.items():
                 bev = bevs[k][i][j].detach().cpu().numpy().transpose((1, 2, 0))
                 bevs_cam[k] = cv2.cvtColor(bev, cv2.COLOR_GRAY2BGR)
-            imgs_cam = plot_pt_unsupervised_kernel(params, pts, bevs_cam)
+            imgs_cam = plot_pt_unsupervised_kernel(params, pts_cam, bevs_cam)
             stack = np.concatenate(imgs_cam, axis=0)
             imgs.append(stack)
     # Concatenate 4 or multi cameras

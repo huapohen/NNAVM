@@ -24,8 +24,8 @@ def train_config(cfg):
     cfg.camera_list = ["front"]
     # cfg.camera_list = ["front", 'back']
     # cfg.camera_list = ["front", 'back', 'left', 'right']
-    cfg.exp_id = 2
-    cfg.gpu_used = '2'
+    cfg.exp_id = 1
+    cfg.gpu_used = '6_7'
     cfg.num_workers = 16
     cfg.train_batch_size = 32
     cfg.num_epochs = 24
@@ -40,7 +40,7 @@ def train_config(cfg):
     # cfg.eval_freq = 1
     cfg.train_visualize_save = True
     cfg.train_vis_iter_frequence = 20
-    cfg.eval_freq = 10000
+    cfg.eval_freq = 1000
     cfg.major_metric = 'total_loss'
     cfg.metric_mode = 'descend'
     cfg = continue_train(cfg, 0)
@@ -51,9 +51,9 @@ def train_config(cfg):
 def test_config(cfg, args=None):
 
     cfg.exp_id = 1
-    cfg.gpu_used = '2_5'
-    cfg.eval_batch_size = 2
-    cfg.test_data_ratio = [["v2", 1]]
+    cfg.gpu_used = '6'
+    cfg.eval_batch_size = 32
+    cfg.test_data_ratio = [["v3", 1]]
     cfg.camera_list = ["front"]
     # cfg.model_train_type = "supervised"
     cfg.model_train_type = "unsupervised"
@@ -70,7 +70,7 @@ def test_config(cfg, args=None):
         cfg.major_metric = 'homing_point_ratio'
         cfg.metric_mode = "ascend"
     elif cfg.model_train_type == 'unsupervised':
-        cfg.major_metric = "psnr"
+        cfg.major_metric = "total_loss"
 
     return cfg
 

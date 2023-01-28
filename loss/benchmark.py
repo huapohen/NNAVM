@@ -8,8 +8,8 @@ def calc_point_indicator(params, data, indicator):
 
     m_pixel_err = []
     for i, cam in enumerate(params.camera_list):
-        pd = output[i : (i + 1) * batch_size]
-        gt = offset[i : (i + 1) * batch_size]
+        pd = output[i * batch_size : (i + 1) * batch_size]
+        gt = offset[i * batch_size : (i + 1) * batch_size]
         x2 = torch.square(pd[:, :, 0] - gt[:, :, 0])
         y2 = torch.square(pd[:, :, 1] - gt[:, :, 1])
         pix_err = torch.mean(torch.sqrt(x2 + y2))

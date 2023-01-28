@@ -12,9 +12,9 @@
             // "program": "train.py",
             // "program": "evaluate.py",
             // "program": "search_hyperparams.py",
+            // "program": "dataset/datamaker/bev_from_multi_fev.py",
             // "program": "dataset/data_loader.py",
             // "program": "dataset/data_set.py",
-            // "program": "dataset/data_maker.py",
             "console": "integratedTerminal",
         }
     ]

@@ -228,7 +228,7 @@ def get_warp_image(params, batch_size, homo, src):
     for i, cam in enumerate(params.camera_list):
         w, h = params.wh_bev_fblr[cam]
         grid = get_grid(batch_size, h, w, 0, params.cuda)
-        h_this = homo[i : (i + 1) * batch_size]
+        h_this = homo[i * batch_size : (i + 1) * batch_size]
         h_inv = torch.inverse(h_this)
         flow, vgrid = get_flow_vgrid(h_inv, grid, h, w, 1)
         hgrid = vgrid + flow

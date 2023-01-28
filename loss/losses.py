@@ -8,8 +8,8 @@ def loss_supervised(params, data):
     batch_size = int(data['image'].shape[0] / len(params.camera_list))
     losses = []
     for i, cam in enumerate(params.camera_list):
-        pred = offset_pred[i : (i + 1) * batch_size]
-        gt = offset[i : (i + 1) * batch_size]
+        pred = offset_pred[i * batch_size : (i + 1) * batch_size]
+        gt = offset[i * batch_size : (i + 1) * batch_size]
         loss = F.mse_loss(pred, gt)
         losses.append(loss.unsqueeze(0))
     losses = torch.cat(losses).mean()
@@ -39,9 +39,8 @@ def compute_losses(params, data):
     return {"total_loss": losses}
 
 
-
 if __name__ == "__main__":
-    
+
     import ipdb
     import numpy as np
     from util.torch_op import dlt_homo

@@ -129,8 +129,12 @@ def WarpImages(input_map, H, start, patch_size):
     def bilinear_interpote(
         batch_img, batch_x, batch_y, patch_size, bs, imgh, imgw, imgc
     ):
-        batch_x = torch.clamp(batch_x, min=0, max=imgw - 1).view(-1,)
-        batch_y = torch.clamp(batch_y, min=0, max=imgh - 1).view(-1,)
+        batch_x = torch.clamp(batch_x, min=0, max=imgw - 1).view(
+            -1,
+        )
+        batch_y = torch.clamp(batch_y, min=0, max=imgh - 1).view(
+            -1,
+        )
 
         # select four points around the interpolated point
         batch_x0 = torch.floor(batch_x).long()
@@ -235,8 +239,12 @@ def CropPatchFromFull(patch_size, full_img, start, rescale=False):
     def bilinear_interpote(
         batch_img, batch_x, batch_y, patch_size, bs, imgh, imgw, imgc
     ):
-        batch_x = torch.clamp(batch_x, min=0, max=imgw - 1).view(-1,)
-        batch_y = torch.clamp(batch_y, min=0, max=imgh - 1).view(-1,)
+        batch_x = torch.clamp(batch_x, min=0, max=imgw - 1).view(
+            -1,
+        )
+        batch_y = torch.clamp(batch_y, min=0, max=imgh - 1).view(
+            -1,
+        )
 
         # select four points around the interpolated point
         batch_x0 = torch.floor(batch_x).long()
@@ -427,9 +435,10 @@ def DLT_solve(src_p, off_set):
     xyu, xyd = torch.cat((xy1, zeros), axis=2), torch.cat((zeros, xy1), axis=2)
 
     M1 = torch.cat((xyu, xyd), axis=2).reshape(N, -1, 6)
-    M2 = torch.matmul(dst_p.reshape(-1, 2, 1), src_ps.reshape(-1, 1, 2),).reshape(
-        N, -1, 2
-    )
+    M2 = torch.matmul(
+        dst_p.reshape(-1, 2, 1),
+        src_ps.reshape(-1, 1, 2),
+    ).reshape(N, -1, 2)
 
     A = torch.cat((M1, -M2), axis=2)
     b = dst_p.reshape(N, -1, 1)

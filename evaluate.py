@@ -82,8 +82,7 @@ def evaluate(manager):
 
                 if params.eval_visualize_save:
                     visulize_results(params, data)
-                    if idx > 15:
-                        sys.exit()
+                    # sys.exit()
 
                 t.update()
 

@@ -19,8 +19,9 @@ from easydict import EasyDict
 from itertools import permutations
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 torch.backends.cuda.matmul.allow_tf32 = False
+random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
 torch.cuda.manual_seed(0)
@@ -34,13 +35,13 @@ class DataMakerTorch(nn.Module):
         support: from undist to bev
         todo: from fev to bev
     Pipeline:
-        after class instance initialization, run `def _init_dataset_mode_info`
+        after class instance initialization, run `def init_dataset_mode_info`
     Application:
         generator = DataMakerTorch(enable_cuda=True)
         # for mode in ['gt_bev']:
         # for mode in ['train', 'test']:
         for mode in ['gt_bev', 'train', 'test']:
-            generator._init_dataset_mode_info(mode)
+            generator.init_dataset_mode_info(mode)
             pts = generator.generate_perturbed_points()
             bs_list = generator.batch_size_list
             for i in tqdm(range(generator.iteration)):
@@ -102,6 +103,7 @@ class DataMakerTorch(nn.Module):
         self.pt_src_fblr, self.pt_dst_fblr = self.read_points(index)
         self.homo_torch_op, self.warp_torch_op = self._init_torch_operation(bs)
         self.assign_sample_num = -1
+        self.assign_sample_mode = 'sequence'  # random
 
     def _init_avm_calibrate_paramters(self):
         self.calibrate = {
@@ -238,6 +240,10 @@ class DataMakerTorch(nn.Module):
             cinl = cam_img_name_list
             asm = assign_sample_num
             assert len(cinl) > batch_size
+            if self.assign_sample_mode == 'random' and asm > 0:
+                cinl = random.shuffle(cinl)
+            elif self.assign_sample_mode == 'sequence':
+                cinl = sorted(cinl)
             asm = len(cinl) if min(asm, len(cinl)) <= 0 else asm
             self.assign_sample_num = asm = max(asm, batch_size)
             self.cam_img_name_list = cinl[:asm]
@@ -317,7 +323,7 @@ class DataMakerTorch(nn.Module):
         )
         return
 
-    def _init_dataset_mode_info(self, mode='train'):
+    def init_dataset_mode_info(self, mode='train'):
         assert mode in ['gt_bev', 'train', 'test']
         print(f'\n ---------- init_mode: {mode} ---------- ')
         self.dataset_init_mode = mode
@@ -330,7 +336,7 @@ class DataMakerTorch(nn.Module):
         # perturbed points info
         self._init_get_perturbed_points_info(mode)
 
-    def get_src_images(self, idx=None, batch_size=None, mode=None, align_fblr=None):
+    def get_src_images(self, idx=None, mode=None, align_fblr=None):
 
         if mode is None:
             mode = self.src_num_mode
@@ -359,10 +365,10 @@ class DataMakerTorch(nn.Module):
                     src_fblr[camera] = []
                     nam_fblr[camera] = []
                 for camera in self.camera_fblr:
-                    if batch_size is not None and idx is not None:
+                    if idx is not None:
                         cam_dir = os.path.join(self.multiple_undist_dir, camera)
                         name_list = self.cam_img_name_list[
-                            idx * batch_size : (idx + 1) * batch_size
+                            idx * self.batch_size : (idx + 1) * self.batch_size
                         ]
                         file_name_list = [
                             e.replace(self.any_camera, camera) for e in name_list
@@ -530,7 +536,9 @@ class DataMakerTorch(nn.Module):
             img_fblr[camera] = img
         return img_fblr
 
-    def warp_perturbed_image_single_src(self, pts_perturb=None, src_fblr=None, bs=None):
+    def warp_perturbed_image_single_src(
+        self, pts_perturb=None, src_fblr=None, name_fblr=None
+    ):
         pt_undist_fblr = self.pt_src_fblr
         if pts_perturb is None:
             with open(self.perturb_pts_path, 'r') as f:
@@ -560,7 +568,7 @@ class DataMakerTorch(nn.Module):
                 cv2.imwrite(sv_path, dst)
         return
 
-    def warp_perturbed_image_multi_src(self, pts_perturb, src_fblr, name_fblr, bs):
+    def warp_perturbed_image_multi_src(self, pts_perturb, src_fblr, name_fblr):
         pt_undist_fblr = self.pt_src_fblr
         kn_ = self.key_name_pts_perturb
 
@@ -593,10 +601,9 @@ class DataMakerTorch(nn.Module):
                 pt_perturbed = torch.Tensor(pt_perturbed).reshape(1, -1, 2)
                 if self.enable_cuda:
                     pt_perturbed = pt_perturbed.cuda()
-                pt_perturbed = pt_perturbed.repeat(bs, 1, 1)
-                pt_undist = pt_undist_fblr[camera].repeat(bs, 1, 1)
-                H = self.homo_torch_op(pt_undist, pt_perturbed)[0]
-                H_inv = torch.inverse(H).unsqueeze(0)
+                pt_undist = pt_undist_fblr[camera]
+                H = self.homo_torch_op(pt_undist, pt_perturbed)
+                H_inv = torch.inverse(H).repeat(len(names), 1, 1)
                 dst = self.warp_torch_op[camera](src_cam, H_inv)
                 dst = dst.transpose(1, 2).transpose(2, 3)  # bchw -> bhwc
                 dst = dst.detach().cpu().numpy()
@@ -612,10 +619,8 @@ class DataMakerTorch(nn.Module):
                 )
         return
 
-    def warp_perturbed_image(
-        self, pts_perturb=None, src_fblr=None, name_fblr=None, bs=None
-    ):
-        warp_params = (pts_perturb, src_fblr, name_fblr, bs)
+    def warp_perturbed_image(self, pts_perturb=None, src_fblr=None, name_fblr=None):
+        warp_params = (pts_perturb, src_fblr, name_fblr)
         if self.src_num_mode == self.src_num_mode_key_name.single:
             self.warp_perturbed_image_single_src(*warp_params)
         elif self.src_num_mode == self.src_num_mode_key_name.multi:
@@ -1666,14 +1671,15 @@ if __name__ == "__main__":
     elif run_mode == 'torch':
         generator = DataMakerTorch(enable_cuda=True)
         # for mode in ['gt_bev']:
+        # for mode in ['test']:
+        # for mode in ['gt_bev', 'test']:
         # for mode in ['train', 'test']:
         for mode in ['gt_bev', 'train', 'test']:
-            generator._init_dataset_mode_info(mode)
+            generator.init_dataset_mode_info(mode)
             pts = generator.generate_perturbed_points()
-            bs_list = generator.batch_size_list
             for i in tqdm(range(generator.iteration)):
-                src, name = generator.get_src_images(i, bs_list[i])
-                generator.warp_perturbed_image(pts, src, name, bs_list[i])
+                src, name = generator.get_src_images(i)
+                generator.warp_perturbed_image(pts, src, name)
             generator.shutil_copy()
 
     elif run_mode == 'fev2undist_cv2':

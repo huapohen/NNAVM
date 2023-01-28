@@ -147,6 +147,9 @@ class DatasetPipeline(Dataset):
             for camera in self.camera_list:
                 name = f'{name_ori}.{self.params.train_image_type}'
                 img_path = os.path.join(base_path, 'bev', camera, name)
+                if not os.path.exists(img_path):
+                    print('img_path not exist: ', img_path)
+                    sys.exit()
                 ori = cv2.imread(img_path)
                 ori = cv2.cvtColor(ori, cv2.COLOR_BGR2GRAY)
                 ori = torch.from_numpy(ori).unsqueeze(0)
