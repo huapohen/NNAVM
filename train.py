@@ -137,12 +137,14 @@ def train_and_evaluate(manager):
 
     if not isinstance(epoch_start, int):
         epoch_start = 0
+
     for epoch in range(epoch_start, manager.params.num_epochs):
         manager.params.current_epoch = epoch + 1
 
         # evaluate the net
-        if epoch != 0 and epoch % manager.params.eval_freq == 0:
-            evaluate(manager)
+        if epoch % manager.params.eval_freq == 0:
+            if epoch != 0 or manager.params.is_eval_first:
+                evaluate(manager)
 
         # Save latest model, or best model weights accroding to the params.major_metric
         manager.check_best_save_last_checkpoints(latest_freq=1)
@@ -275,13 +277,14 @@ if __name__ == "__main__":
     dataloaders = data_loader.fetch_dataloader(params)
 
     # Dataset information
-    sample_info = dataloaders['train'].sample_number
-    ds_stats = ""
-    for k, v in sample_info.items():
-        if k != 'total_samples':
-            ds_stats += f" {k}  r={v['ratio']} n={v['samples']}\t"
-    logger.info(f"dataset: {ds_stats}")
-    logger.info(f"total samples: {sample_info['total_samples']}")
+    for set_mode, set_dl in dataloaders.items():
+        sample_info = set_dl.sample_number
+        ds_stats = ""
+        for k, v in sample_info.items():
+            if k != 'total_samples':
+                ds_stats += f" {k}  r={v['ratio']} n={v['samples']}\t"
+        logger.info(f"{set_mode} dataset: {ds_stats}")
+        logger.info(f"total samples: {sample_info['total_samples']}")
 
     # Initial status for checkpoint manager
     assert params.metric_mode in ["ascend", "descend"]

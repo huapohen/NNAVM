@@ -168,7 +168,7 @@ def run_all_exps(exp_id):
         if k != 'total_samples':
             ds_stats += f" {k}  r={v['ratio']} n={v['samples']}\t"
     logger.info(f"save_img: {params.eval_visualize_save}")
-    logger.info(f"dataset: {ds_stats}")
+    logger.info(f"test dataset: {ds_stats}")
     logger.info(f"total samples: {sample_info['total_samples']}")
 
     # model

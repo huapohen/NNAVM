@@ -27,22 +27,26 @@ def train_config(cfg):
     cfg.exp_id = 1
     cfg.gpu_used = '6_7'
     cfg.num_workers = 16
-    cfg.train_batch_size = 32
-    cfg.num_epochs = 24
+    cfg.num_epochs = 12
+    cfg.train_batch_size = 64
     cfg.train_data_ratio = [["v3", 1]]
     # cfg.src_num_mode = "single_calibrate_image"
     cfg.src_num_mode = "multiple_driving_images"
     cfg.scale_undist = 0.5
     # cfg.model_train_type = "supervised"
     cfg.model_train_type = "unsupervised"
-    # cfg.second_stage_image_supervised = True  # exp_8
-    # cfg.bev_mask_mode = True # exp_9
-    # cfg.eval_freq = 1
+    # cfg.second_stage_image_supervised = True
+    # cfg.bev_mask_mode = True
     cfg.train_visualize_save = True
     cfg.train_vis_iter_frequence = 20
-    cfg.eval_freq = 1000
     cfg.major_metric = 'total_loss'
     cfg.metric_mode = 'descend'
+    # cfg.dataset_type = "train"
+    cfg.eval_freq = 1
+    cfg.is_eval_first = True
+    cfg.dataset_type = "basic"  # train + test
+    cfg.eval_batch_size = 32
+    cfg.test_data_ratio = cfg.train_data_ratio
     cfg = continue_train(cfg, 0)
     # cfg.gpu_used = '0_1_2_3_4_5_6_7' # use 8 GPUs
     return cfg
@@ -50,7 +54,7 @@ def train_config(cfg):
 
 def test_config(cfg, args=None):
 
-    cfg.exp_id = 1
+    cfg.exp_id = 2
     cfg.gpu_used = '6'
     cfg.eval_batch_size = 32
     cfg.test_data_ratio = [["v3", 1]]
