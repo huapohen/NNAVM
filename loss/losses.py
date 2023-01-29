@@ -1,10 +1,16 @@
 import torch
 import torch.nn.functional as F
+from easydict import EasyDict as dic
 
 
 def loss_supervised(params, data):
-    offset = data['offset']
-    offset_pred = data['offset_pred']
+    '''
+    point or image
+    this function realizes point mode
+    '''
+    _kn = dic(params.loss_point_and_image_mode_key_name)
+    offset = data[_kn.offset]
+    offset_pred = data[_kn.offset_pred]
     batch_size = int(data['image'].shape[0] / len(params.camera_list))
     losses = []
     for i, cam in enumerate(params.camera_list):
@@ -17,10 +23,22 @@ def loss_supervised(params, data):
 
 
 def loss_unsupervised(params, data):
+    '''
+    photo loss, l1 loss
+    image bev_perturbed mode
+    '''
+    _kn1 = dic(params.photo_loss_mode_key_name)
+    _kn2 = dic(params.loss_point_and_image_mode_key_name)
     losses = []
     for i, cam in enumerate(params.camera_list):
-        pred = data['bev_origin_pred'][i]
-        gt = data['bev_origin'][i]
+        if params.photo_loss_mode == _kn1.perturbed:
+            pred = data[_kn2.bev_perturbed_pred][i]
+            gt = data[_kn2.bev_perturbed][i]
+        elif params.photo_loss_mode == _kn1.origin:
+            pred = data[_kn2.bev_origin_pred][i]
+            gt = data[_kn2.bev_origin][i]
+        else:
+            raise
         loss = F.l1_loss(pred, gt.float())
         losses.append(loss.unsqueeze(0))
     losses = torch.cat(losses).mean()
@@ -28,10 +46,15 @@ def loss_unsupervised(params, data):
 
 
 def compute_losses(params, data):
+    '''
+    supervised for point and image
+    unsupervised only for image
+    '''
+    _kn = dic(params.model_train_type_key_name)
 
-    if params.model_train_type == 'supervised':
+    if params.model_train_type == _kn.supervised:
         losses = loss_supervised(params, data)
-    elif params.model_train_type == 'unsupervised':
+    elif params.model_train_type == _kn.unsupervised:
         losses = loss_unsupervised(params, data)
     else:
         raise ValueError

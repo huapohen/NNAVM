@@ -71,7 +71,7 @@
     "eval_batch_size": 64,
     "num_epochs": 36,
     "eval_freq": 1,
-    "is_eval_first": false,
+    "is_eval_first": true,
     "num_workers": 8,
     "num_workers_eval": 8,
     "gpu_used": "0",
@@ -115,7 +115,11 @@
         "name",
         "path"
     ],
-    "model_train_type": "supervised",
+    "model_train_type_key_name": {
+        "unsupervised": "unsupervised",
+        "supervised": "supervised"
+    },
+    "model_train_type": "unsupervised",
     "visualize_mode": "evaluate",
     "train_eval_inference": "train",
     "nn_output_do_tanh": true,
@@ -129,5 +133,18 @@
         "single": "single_calibrate_image"
     },
     "src_num_mode": "multiple_driving_images",
-    "scale_undist": 0.5
+    "scale_undist": 0.5,
+    "photo_loss_mode_key_name": {
+        "perturbed": "bev_perturbed",
+        "origin": "bev_origin"
+    },
+    "photo_loss_mode": "bev_perturbed",
+    "loss_point_and_image_mode_key_name": {
+        "offset": "offset",
+        "offset_pred": "offset_pred",
+        "bev_origin": "bev_origin",
+        "bev_origin_pred": "bev_origin_pred",
+        "bev_perturbed": "bev_perturbed",
+        "bev_perturbed_pred": "bev_perturbed_pred"
+    }
 }

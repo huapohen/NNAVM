@@ -24,7 +24,7 @@ def train_config(cfg):
     cfg.camera_list = ["front"]
     # cfg.camera_list = ["front", 'back']
     # cfg.camera_list = ["front", 'back', 'left', 'right']
-    cfg.exp_id = 1
+    cfg.exp_id = 4
     cfg.gpu_used = '6_7'
     cfg.num_workers = 16
     cfg.num_epochs = 12
@@ -43,7 +43,8 @@ def train_config(cfg):
     cfg.metric_mode = 'descend'
     # cfg.dataset_type = "train"
     cfg.eval_freq = 1
-    cfg.is_eval_first = True
+    # cfg.is_eval_first = True
+    cfg.is_eval_first = False
     cfg.dataset_type = "basic"  # train + test
     cfg.eval_batch_size = 32
     cfg.test_data_ratio = cfg.train_data_ratio

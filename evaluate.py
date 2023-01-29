@@ -55,8 +55,8 @@ def evaluate(manager):
     manager.reset_metric_status("test")
     manager.model.eval()
     params = manager.params
-    model_train_type = params.model_train_type
     params.visualize_mode = 'evaluate'
+    params.train_eval_inference = 'eval'
 
     Metric = EasyDict(
         {"total_loss": [], 'homing_point_ratio': [], 'mean_pixel_err': [], 'psnr': []}
@@ -85,6 +85,8 @@ def evaluate(manager):
                     # sys.exit()
 
                 t.update()
+
+                # break
 
         Metric = statistic_metric(Metric)
 

@@ -152,6 +152,8 @@ def train_and_evaluate(manager):
         # compute number of batches in one epoch (one full pass over the training set)
         train(manager)
 
+    # finished train, evaluate
+    evaluate(manager)
     with open(os.path.join(manager.params.model_dir, "finish_flag.txt"), "w") as f:
         f.write("exp finish!")
 
