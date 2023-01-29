@@ -1,3 +1,4 @@
+import os
 import cv2
 import random
 import numpy as np
@@ -186,21 +187,33 @@ class RandomSelect(object):
 
 if __name__ == '__main__':
 
-    photo_aug = PhotometricDistort()
-    hsv_aug = RandomHSV()
-    img_path = 'dataset/data/bev/fev2bev/front.png'
-    img = cv2.imread(img_path)
-    num = 10
-    tgt1, _ = photo_aug([img] * num, None)
-    tgt2, _ = photo_aug([img] * num, None)
-    augs = []
-    for i in range(num):
-        tgt3, _ = hsv_aug(img, None)
-        aug = np.concatenate([img, tgt1[i], tgt2[i], tgt3], axis=1)
-        augs.append(aug)
-    vs = np.concatenate(augs, axis=0)
-    vs_gray = cv2.cvtColor(vs, cv2.COLOR_BGR2GRAY)
-    sv_path1 = 'dataset/data/test/front_aug_bgr.jpg'
-    sv_path2 = 'dataset/data/test/front_aug_gray.jpg'
-    cv2.imwrite(sv_path1, vs)
-    cv2.imwrite(sv_path2, vs_gray)
+    aug_mode = 'photometric'
+    # aug_mode = 'geometric'
+
+    if aug_mode == 'photometric':
+        photo_aug = PhotometricDistort()
+        hsv_aug = RandomHSV()
+        img_path = 'dataset/data/bev/fev2bev/front.png'
+        img = cv2.imread(img_path)
+        num = 10
+        tgt1, _ = photo_aug([img] * num, None)
+        tgt2, _ = photo_aug([img] * num, None)
+        augs = []
+        for i in range(num):
+            tgt3, _ = hsv_aug(img, None)
+            aug = np.concatenate([img, tgt1[i], tgt2[i], tgt3], axis=1)
+            augs.append(aug)
+        vs = np.concatenate(augs, axis=0)
+        vs_gray = cv2.cvtColor(vs, cv2.COLOR_BGR2GRAY)
+        sv_dir = 'dataset/data/test'
+        os.makedirs(sv_dir, exist_ok=True)
+        sv_path1 = f'{sv_dir}/front_aug_bgr.jpg'
+        sv_path2 = f'{sv_dir}/front_aug_gray.jpg'
+        cv2.imwrite(sv_path1, vs)
+        cv2.imwrite(sv_path2, vs_gray)
+
+    elif aug_mode == 'geometric':
+        pass
+
+    else:
+        pass
