@@ -24,7 +24,7 @@ def loss_supervised(params, data):
 
 def loss_unsupervised(params, data):
     '''
-    photo loss, l1 loss
+    Photometric loss, L1 loss
     image bev_perturbed mode
     '''
     _kn1 = dic(params.photo_loss_mode_key_name)
