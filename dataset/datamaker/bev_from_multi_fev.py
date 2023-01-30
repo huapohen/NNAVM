@@ -100,6 +100,7 @@ class DataMakerTorch(nn.Module):
         # if os.path.exists(self.dataset_dir):
         #     shutil.rmtree(self.dataset_dir)
         os.makedirs(self.dataset_dir, exist_ok=True)
+        self.gt_bev_dir = os.path.join(self.dataset_dir, 'gt_bev')
         self._init_json_key_names()
         self._init_undistored_parameters()
         self._init_avm_calibrate_paramters()
@@ -331,7 +332,6 @@ class DataMakerTorch(nn.Module):
         assert mode in ['gt_bev', 'train', 'test']
         print(f'\n ---------- init_mode: {mode} ---------- ')
         if mode in ['train', 'test']:
-            self.gt_bev_dir = os.path.join(self.dataset_dir, 'gt_bev')
             if not os.path.exists(self.gt_bev_dir):
                 print('`gt_bev` dir need to be created first')
                 print('sys.exit()')
