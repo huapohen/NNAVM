@@ -54,7 +54,7 @@ class DataMakerTorch(nn.Module):
         super().__init__()
         self.dataset_root = '/home/data/lwb/data'
         self.dataset_name = 'dybev'
-        self.dataset_version = version = 'v3'
+        self.dataset_version = version = 'v4'
         self.dataset_sv_dir = os.path.join(self.dataset_root, self.dataset_name)
         self.dataset_fev_video_dir_name = 'AVM_record_ocr'
         self.generate_dir_name = 'generate'
@@ -73,6 +73,9 @@ class DataMakerTorch(nn.Module):
         )
         self.src_num_mode = self.src_num_mode_key_name.multi
         # self.src_num_mode = self.src_num_mode_key_name.single
+        self.src_img_mode_key_name = EasyDict(undist='undist', fev='fev')
+        self.src_img_mode = self.src_img_mode_key_name.fev
+        # self.src_img_mode = self.src_img_mode_key_name.undist
         self.enable_cuda = enable_cuda
         self.offset_pix_range = 15
         self.perturb_mode = 'uniform'  # randint
@@ -194,8 +197,7 @@ class DataMakerTorch(nn.Module):
     def _init_split_train_test_videos(self, src_num_mode, dataset_init_mode):
         if src_num_mode != self.src_num_mode_key_name.multi:
             return []
-        self.f2u_dir_name = 'fev2undist'  # indirectly
-        # self.f2b_dir_name = 'fev2bev' # directly
+        self.fub_dir_name = 'fev_undist_bev'
         self.source_videos_list = [
             '20221205135519',
             '20221205135629',
@@ -208,13 +210,13 @@ class DataMakerTorch(nn.Module):
             '20221205141401',
             '20221205141455',
         ]
-        self.multiple_undist_dir = os.path.join(
-            self.dataset_sv_dir, self.f2u_dir_name, 'undist'
+        self.multi_src_img_dir = os.path.join(
+            self.dataset_sv_dir, self.fub_dir_name, self.src_img_mode
         )
         assert self.align_fblr == True, 'only support four cameras'
         # all cameras have the same number of images
         self.any_camera = 'front'
-        self.cam_img_dir_path = os.path.join(self.multiple_undist_dir, self.any_camera)
+        self.cam_img_dir_path = os.path.join(self.multi_src_img_dir, self.any_camera)
         # do this: os.listdir(filter )
         cam_img_name_list = cinl = os.listdir(self.cam_img_dir_path)
         if dataset_init_mode in ['train', 'test'] and self.is_split_videos_train_test:
@@ -234,7 +236,7 @@ class DataMakerTorch(nn.Module):
         self, assign_sample_num, batch_size, cam_img_name_list
     ):
         self.src_img_path_record_txt = os.path.join(
-            self.dataset_sv_dir, self.f2u_dir_name, self.file_record_txt_name
+            self.dataset_sv_dir, self.fub_dir_name, self.file_record_txt_name
         )
         if self.src_num_mode == self.src_num_mode_key_name.multi:
             cinl = cam_img_name_list
@@ -248,6 +250,7 @@ class DataMakerTorch(nn.Module):
             self.assign_sample_num = asm = max(asm, batch_size)
             self.cam_img_name_list = cinl[:asm]
             num_img_per_camera = len(self.cam_img_name_list)
+            os.path.join(self.gt_bev_dir, 'generate')
         else:
             num_img_per_camera = 1
             self.single_fev_dir = os.path.join(self.code_data_dir, 'fev')
@@ -268,6 +271,7 @@ class DataMakerTorch(nn.Module):
         else:
             raise ValueError
         self.dataset_mode_dir = set_dir = os.path.join(self.dataset_dir, mode)
+        # rm first
         if os.path.exists(set_dir):
             shutil.rmtree(set_dir)
         os.makedirs(set_dir)
@@ -326,6 +330,12 @@ class DataMakerTorch(nn.Module):
     def init_dataset_mode_info(self, mode='train'):
         assert mode in ['gt_bev', 'train', 'test']
         print(f'\n ---------- init_mode: {mode} ---------- ')
+        if mode in ['train', 'test']:
+            self.gt_bev_dir = os.path.join(self.dataset_dir, 'gt_bev')
+            if not os.path.exists(self.gt_bev_dir):
+                print('`gt_bev` dir need to be created first')
+                print('sys.exit()')
+                sys.exit()
         self.dataset_init_mode = mode
         # source images info
         snm = self.src_num_mode
@@ -336,10 +346,10 @@ class DataMakerTorch(nn.Module):
         # perturbed points info
         self._init_get_perturbed_points_info(mode)
 
-    def get_src_images(self, idx=None, mode=None, align_fblr=None):
+    def get_src_images(self, idx=None, src_num_mode=None, align_fblr=None):
 
-        if mode is None:
-            mode = self.src_num_mode
+        if src_num_mode is None:
+            src_num_mode = self.src_num_mode
         if align_fblr is None:
             align_fblr = self.align_fblr
         src_fblr = None
@@ -348,25 +358,26 @@ class DataMakerTorch(nn.Module):
         # for multiprocessing
         def _read_image_kernel(img_path, name):
             img = cv2.imread(img_path)
-            if self.new_scale_for_undist != self.scale_previous_value:
-                r_scale = int(self.new_scale_for_undist / self.scale_previous_value)
-                wh = tuple([int(x / r_scale) for x in img.shape[:2]][::-1])
-                img = cv2.resize(img, wh, interpolation=cv2.INTER_AREA)
+            if self.src_img_mode == self.src_img_mode_key_name.undist:
+                if self.new_scale_for_undist != self.scale_previous_value:  # 1.0 vs 0.5
+                    r_scale = int(self.new_scale_for_undist / self.scale_previous_value)
+                    wh = tuple([int(x / r_scale) for x in img.shape[:2]][::-1])  # / 2
+                    img = cv2.resize(img, wh, interpolation=cv2.INTER_AREA)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             img = torch.from_numpy(img).unsqueeze(0)
             return img, name
 
         if align_fblr:
-            if mode == self.src_num_mode_key_name.single:
+            if src_num_mode == self.src_num_mode_key_name.single:
                 src_fblr = self.read_image_fblr()
-            elif mode == self.src_num_mode_key_name.multi:
+            elif src_num_mode == self.src_num_mode_key_name.multi:
                 src_fblr, nam_fblr = {}, {}
                 for camera in self.camera_fblr:
                     src_fblr[camera] = []
                     nam_fblr[camera] = []
                 for camera in self.camera_fblr:
                     if idx is not None:
-                        cam_dir = os.path.join(self.multiple_undist_dir, camera)
+                        cam_dir = os.path.join(self.multi_src_img_dir, camera)
                         name_list = self.cam_img_name_list[
                             idx * self.batch_size : (idx + 1) * self.batch_size
                         ]
@@ -406,7 +417,7 @@ class DataMakerTorch(nn.Module):
                                 nam_fblr[camera].append(name)
                     else:
                         # read all images in one batch at once
-                        cam_dir = os.path.join(self.multiple_undist_dir, camera)
+                        cam_dir = os.path.join(self.multi_src_img_dir, camera)
                         file_name_list = os.listdir(cam_dir)
                         if len(file_name_list) > 64:
                             raise Exception("Too many images to feed into list")
@@ -521,6 +532,8 @@ class DataMakerTorch(nn.Module):
                 pt_dst = pt_dst.cuda()
             pt_src_fblr[camera] = pt_src
             pt_dst_fblr[camera] = pt_dst
+        # cpu or gpu, got it here for the first time
+        self.device = pt_src_fblr[camera].device
         return pt_src_fblr, pt_dst_fblr
 
     def read_image_fblr(self):
@@ -570,7 +583,8 @@ class DataMakerTorch(nn.Module):
 
     def warp_perturbed_image_multi_src(self, pts_perturb, src_fblr, name_fblr):
         pt_undist_fblr = self.pt_src_fblr
-        kn_ = self.key_name_pts_perturb
+        _kn1 = self.key_name_pts_perturb
+        _kn2 = self.src_img_mode_key_name
 
         # for multiprocessing
         def _threads_kernel(sv_path, img):
@@ -597,14 +611,23 @@ class DataMakerTorch(nn.Module):
             for k in range(self.delta_num, self.delta_num + self.num_generated_points):
                 # perturbed points on bev
                 idx = f'{k:04}'  # fixed index format for generating perturbed points
-                pt_perturbed = pts_perturb[camera][kn_.perturbed_points_list][idx]
+                pt_perturbed = pts_perturb[camera][_kn1.perturbed_points_list][idx]
                 pt_perturbed = torch.Tensor(pt_perturbed).reshape(1, -1, 2)
                 if self.enable_cuda:
                     pt_perturbed = pt_perturbed.cuda()
                 pt_undist = pt_undist_fblr[camera]
-                H = self.homo_torch_op(pt_undist, pt_perturbed)
-                H_inv = torch.inverse(H).repeat(len(names), 1, 1)
-                dst = self.warp_torch_op[camera](src_cam, H_inv)
+                if self.src_img_mode == _kn2.undist:
+                    H_u2b = self.homo_torch_op(pt_undist, pt_perturbed)
+                    H_b2u = torch.inverse(H_u2b)
+                    H_b2u = H_b2u.repeat(len(names), 1, 1)
+                    dst = self.warp_torch_op[camera](src_cam, H_b2u, None, 'by_homo')
+                elif self.src_img_mode == _kn2.fev:
+                    H_u2b = self.homo_torch_op(pt_undist * 2, pt_perturbed)
+                    H_b2u = torch.inverse(H_u2b)
+                    grids = self.get_bev_remap_table(H_b2u, camera)
+                    grids = grids.permute(0, 3, 1, 2).contiguous()
+                    grids = grids.repeat(len(names), 1, 1, 1)
+                    dst = self.warp_torch_op[camera](src_cam, None, grids, 'by_grid')
                 dst = dst.transpose(1, 2).transpose(2, 3)  # bchw -> bhwc
                 dst = dst.detach().cpu().numpy()
                 # save
@@ -673,7 +696,80 @@ class DataMakerTorch(nn.Module):
             ones = torch.ones_like(1)
         return grids
 
-    def get_fev2bev_remap_table(self, grids):
+    def undist_grids_to_fev(self, grids):
+        dv = self.device
+        ele1 = torch.tensor([self.undist_w / 2, self.undist_h / 2], device=dv)
+        ele2 = torch.tensor([self.center_w, self.center_h], device=dv)
+        ele3 = torch.tensor([self.intrinsic[0][0], self.intrinsic[1][1]], device=dv)
+        undist_center, dist_center, f = [
+            ele.reshape(1, 1, 1, 2) for ele in [ele1, ele2, ele3]
+        ]
+        grids = grids - undist_center
+        grids_norm = grids / f
+        r_undist = torch.linalg.norm(grids_norm, dim=-1)
+        angle_undistorted = torch.atan(r_undist)
+        angle_undistorted_p2 = angle_undistorted * angle_undistorted
+        angle_undistorted_p3 = angle_undistorted_p2 * angle_undistorted
+        angle_undistorted_p5 = angle_undistorted_p2 * angle_undistorted_p3
+        angle_undistorted_p7 = angle_undistorted_p2 * angle_undistorted_p5
+        angle_undistorted_p9 = angle_undistorted_p2 * angle_undistorted_p7
+        coefs = []
+        for i in range(4):
+            coefs.append(torch.tensor(self.distort[f'Opencv_k{i}'], device=dv))
+        r_distort = (
+            angle_undistorted
+            + coefs[0] * angle_undistorted_p3
+            + coefs[1] * angle_undistorted_p5
+            + coefs[2] * angle_undistorted_p7
+            + coefs[3] * angle_undistorted_p9
+        )
+        min_value = torch.tensor(1e-6, device=dv)
+        scale = torch.div(r_distort, r_undist.clamp_(min_value))
+        scale = scale.unsqueeze(-1)
+        grids = grids * scale + dist_center
+
+        return grids
+
+    def get_bev_remap_table(self, H_bev2undist=None, camera=None):
+        '''
+        two mode: 1. fev2bev; 2. undist2bev
+        if H_bev2undist is not None, mode is fev2bev: feb <- undist <- bev
+        input  shape:
+            H_bev2undist: camera_front bhw=(b,336,1078) b=1
+        output shape:
+            if u2b: bhwc=(b, 2976, 3968, 2)
+            if f2b: bhwc=(b, bev_h, bev_w, 2)
+        '''
+        assert len(H_bev2undist.shape) == 3
+
+        dv = self.device
+        mode = 'f2b' if H_bev2undist is not None else 'u2b'
+        if mode == 'f2b':
+            H_b2u = H_bev2undist
+            h = self.bev_wh_fblr[camera]["h"]
+            w = self.bev_wh_fblr[camera]["w"]
+        else:
+            h = self.undist_h
+            w = self.undist_w
+        grid_x, grid_y = torch.meshgrid(  # grid_i, grid_j
+            torch.arange(w, device=dv),  # h
+            torch.arange(h, device=dv),  # w
+            indexing='xy',  # 'ij'
+        )
+        if mode == 'f2b':
+            grid_v = grid_x.new_ones(*grid_x.shape)
+            grids = torch.stack([grid_x, grid_y, grid_v], dim=2)
+            grids = grids.reshape((-1, 3)).transpose(1, 0).float()
+            grids = torch.matmul(H_b2u, grids)
+            grids = grids.transpose(2, 1).reshape((-1, h, w, 3))
+            grids = grids / grids[:, :, :, 2:]
+            grids = grids[:, :, :, 0:2]
+        elif mode == 'u2b':
+            grids = torch.stack([grid_x, grid_y], dim=2)
+            grids = grids.unsqueeze(0)
+
+        grids = self.undist_grids_to_fev(grids)
+
         return grids
 
     def shutil_copy(self):
@@ -700,13 +796,19 @@ class DataMakerTorch(nn.Module):
                 and self.perturbed_pipeline == 'undist2bev'
             ):
                 src_undist_dir = os.path.join(
-                    self.dataset_sv_dir, 'fev2undist', 'undist'
+                    self.dataset_sv_dir, self.fub_dir_name, 'undist'
                 )
                 dst_undist_dir = os.path.join(set_dir, 'undist')
                 src_bev_dir = os.path.join(self.dataset_dir, 'gt_bev', 'generate')
                 dst_bev_dir = os.path.join(set_dir, 'bev')
+                # redundant, TODO (   )
                 shutil.copytree(src_undist_dir, dst_undist_dir)
                 shutil.copytree(src_bev_dir, dst_bev_dir)
+                # # fev and gt_bev
+                # for camera in self.camera_fblr:
+                #     src_dir = os.path.join(self.gt_bev_dir, 'generate', camera)
+                #     dst_dir = os.path.join(self.dataset_mode_dir, 'generate', camera)
+                #     os.makedirs(dst_dir)
             else:
                 # TODO
                 pass
@@ -758,7 +860,7 @@ class DataMakerCV2:
     def _init_extract_frames_parameters(self):
         self.dataset_root = '/homo/data/lwb/data'
         self.dataset_name = 'dybev'
-        self.f2u_dir_name = 'fev2undist'  # update this
+        self.fub_dir_name = 'fev2undist'  # update this
         self.dataset_fev_video_dir_name = 'AVM_record_ocr'
         self.file_record_txt_name = 'image_names.txt'
         self.extracted_fev_dir_name = 'frames'
@@ -1162,7 +1264,7 @@ class DataMakerCV2:
         '''
         remap_params = (grids[:, :, 0], grids[:, :, 1], cv2.INTER_LINEAR)
         base_dir = self.dataset_root
-        save_dir = os.path.join(base_dir, self.dataset_name, self.f2u_dir_name)
+        save_dir = os.path.join(base_dir, self.dataset_name, self.fub_dir_name)
         undist_sv_dir = os.path.join(save_dir, 'undist')
         cp_fev_sv_dir = os.path.join(save_dir, 'fev')
         videos_dir = os.path.join(
@@ -1558,11 +1660,13 @@ class WarpTorchOP(nn.Module):
             output = output.permute(0, 3, 1, 2).contiguous()
         return output
 
-    def forward(self, src, H):
-        grid = self.grid[: src.shape[0]]
-        flow, vgrid = self.get_flow_vgrid(H, grid, self.h, self.w, 1)
-        dst = self.warp_image(src, vgrid + flow)
-
+    def forward(self, src=None, H=None, grids=None, mode='by_homo'):
+        assert mode in ['by_homo', 'by_grid']
+        if mode == 'by_homo':
+            grid = self.grid[: src.shape[0]]
+            flow, vgrid = self.get_flow_vgrid(H, grid, self.h, self.w, 1)
+            grids = vgrid + flow
+        dst = self.warp_image(src, grids)
         return dst
 
 
