@@ -76,6 +76,7 @@ class DataMakerTorch(nn.Module):
         self.src_img_mode_key_name = EasyDict(undist='undist', fev='fev')
         self.src_img_mode = self.src_img_mode_key_name.fev
         # self.src_img_mode = self.src_img_mode_key_name.undist
+        bev_mode = 'fev2bev' if self.src_img_mode == 'fev' else 'undist2bev'
         self.enable_cuda = enable_cuda
         self.offset_pix_range = 15
         self.perturb_mode = 'uniform'  # randint
@@ -90,8 +91,6 @@ class DataMakerTorch(nn.Module):
         self.perturbed_points_index = index = [0, 3, 4, 7]  # four corners
         self.camera_fblr = ["front", "back", "left", "right"]
         self.align_fblr = True  # fblr four cameras
-        bev_mode = 'undist2bev'  # indirectly
-        # bev_mode = 'fev2bev' # directly
         self.perturbed_image_type = 'bev'
         self.perturbed_pipeline = bev_mode
         self.bev_dir = os.path.join(code_data_dir, 'bev', bev_mode)
@@ -211,13 +210,13 @@ class DataMakerTorch(nn.Module):
             '20221205141401',
             '20221205141455',
         ]
-        self.multi_src_img_dir = os.path.join(
+        self.src_img_dir = os.path.join(
             self.dataset_sv_dir, self.fub_dir_name, self.src_img_mode
         )
         assert self.align_fblr == True, 'only support four cameras'
         # all cameras have the same number of images
         self.any_camera = 'front'
-        self.cam_img_dir_path = os.path.join(self.multi_src_img_dir, self.any_camera)
+        self.cam_img_dir_path = os.path.join(self.src_img_dir, self.any_camera)
         # do this: os.listdir(filter )
         cam_img_name_list = cinl = os.listdir(self.cam_img_dir_path)
         if dataset_init_mode in ['train', 'test'] and self.is_split_videos_train_test:
@@ -377,7 +376,7 @@ class DataMakerTorch(nn.Module):
                     nam_fblr[camera] = []
                 for camera in self.camera_fblr:
                     if idx is not None:
-                        cam_dir = os.path.join(self.multi_src_img_dir, camera)
+                        cam_dir = os.path.join(self.src_img_dir, camera)
                         name_list = self.cam_img_name_list[
                             idx * self.batch_size : (idx + 1) * self.batch_size
                         ]
@@ -417,7 +416,7 @@ class DataMakerTorch(nn.Module):
                                 nam_fblr[camera].append(name)
                     else:
                         # read all images in one batch at once
-                        cam_dir = os.path.join(self.multi_src_img_dir, camera)
+                        cam_dir = os.path.join(self.src_img_dir, camera)
                         file_name_list = os.listdir(cam_dir)
                         if len(file_name_list) > 64:
                             raise Exception("Too many images to feed into list")
@@ -795,20 +794,11 @@ class DataMakerTorch(nn.Module):
                 and self.perturbed_image_type == 'bev'
                 and self.perturbed_pipeline == 'undist2bev'
             ):
-                src_undist_dir = os.path.join(
-                    self.dataset_sv_dir, self.fub_dir_name, 'undist'
-                )
-                dst_undist_dir = os.path.join(set_dir, 'undist')
+                dst_img_dir = os.path.join(set_dir, self.src_img_mode)
                 src_bev_dir = os.path.join(self.dataset_dir, 'gt_bev', 'generate')
                 dst_bev_dir = os.path.join(set_dir, 'bev')
-                # redundant, TODO (   )
-                shutil.copytree(src_undist_dir, dst_undist_dir)
+                shutil.copytree(self.src_img_dir, dst_img_dir)
                 shutil.copytree(src_bev_dir, dst_bev_dir)
-                # # fev and gt_bev
-                # for camera in self.camera_fblr:
-                #     src_dir = os.path.join(self.gt_bev_dir, 'generate', camera)
-                #     dst_dir = os.path.join(self.dataset_mode_dir, 'generate', camera)
-                #     os.makedirs(dst_dir)
             else:
                 # TODO
                 pass
