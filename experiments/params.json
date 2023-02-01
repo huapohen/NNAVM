@@ -105,10 +105,17 @@
         "left",
         "right"
     ],
-    "bev_mode": "undist2bev",
+    "all_input_image_mode_for_net": [
+        "fev",
+        "bev",
+        "undist",
+        "bev+undist"
+    ],
+    "input_image_mode_for_net": "bev",
     "dataloader_task_mode": [
         "offset",
         "coords",
+        "fev",
         "undist",
         "bev_origin",
         "bev_perturbed",
@@ -132,6 +139,9 @@
         "multi": "multiple_driving_images",
         "single": "single_calibrate_image"
     },
+    "single_bev_mode": "fev2bev",
+    "multi_bev_mode": "fev2bev",
+    "src_img_mode": "fev",
     "src_num_mode": "multiple_driving_images",
     "scale_undist": 0.5,
     "photo_loss_mode_key_name": {
@@ -146,5 +156,26 @@
         "bev_origin_pred": "bev_origin_pred",
         "bev_perturbed": "bev_perturbed",
         "bev_perturbed_pred": "bev_perturbed_pred"
-    }
+    },
+    "is_startup_augment": true,
+    "augment_parameters": {
+        "is_aug_perturbed_bev": true,
+        "is_aug_perturbed_undist": false,
+        "colorjitter": {
+            "probability": 0.8,
+            "items": {
+                "brightness": 0.9,
+                "contrast": 0.5,
+                "saturation": 0.5,
+                "hue": 0.3
+            }
+        },
+        "shift": {
+            "probability": 0,
+            "w_ratio": 0.1,
+            "h_ratio": 0.1
+        }
+    },
+    "is_align_fblr_resolution": true,
+    "is_exp_rm_protect": true
 }

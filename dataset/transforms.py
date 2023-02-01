@@ -2,6 +2,7 @@ import os
 import cv2
 import random
 import numpy as np
+import torchvision.transforms as T
 from PIL import Image
 
 
@@ -41,7 +42,7 @@ class RandomContrast(object):
 
     def __call__(self, image, target):
 
-        if np.random.randint(2):
+        if np.random.randint(8):
             alpha = np.random.uniform(self.lower, self.upper)
             image *= alpha
         return image, target
@@ -55,8 +56,11 @@ class RandomBrightness(object):
 
     def __call__(self, image, target):
         if np.random.randint(2):
-            delta = np.random.uniform(-self.delta, self.delta)
-            image += delta
+            # delta = np.random.uniform(-self.delta, self.delta)
+            # image += delta
+            image = np.power(image, 1.11)
+        else:
+            image = np.power(image, 0.8)
         return image, target
 
 
@@ -68,7 +72,7 @@ class RandomSaturation(object):
         assert self.lower >= 0, "contrast lower must be non-negative."
 
     def __call__(self, image, target):
-        if np.random.randint(2):
+        if np.random.randint(8):
             image[:, :, 1] *= np.random.uniform(self.lower, self.upper)
         return image, target
 
@@ -79,7 +83,7 @@ class RandomHue(object):  #
         self.delta = delta
 
     def __call__(self, image, target):
-        if np.random.randint(2):
+        if np.random.randint(8):
             image[:, :, 0] += np.random.uniform(-self.delta, self.delta)
             image[:, :, 0][image[:, :, 0] > 360.0] -= 360.0
             image[:, :, 0][image[:, :, 0] < 0.0] += 360.0
@@ -91,7 +95,7 @@ class RandomLightingNoise(object):
         self.perms = ((0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0))
 
     def __call__(self, image, target):
-        if np.random.randint(2):
+        if np.random.randint(8):
             swap = self.perms[np.random.randint(len(self.perms))]
             shuffle = SwapChannels(swap)  # shuffle channels
             image = shuffle(image)
@@ -157,7 +161,7 @@ class PhotometricDistort(object):
         imgs = []
         for img in clip:
             img = np.asarray(img).astype('float32')
-            # img, target = self.rand_brightness(img, target)
+            img, target = self.rand_brightness(img, target)
             if np.random.randint(2):
                 distort = Compose(self.pd[:-1])
             else:
@@ -185,6 +189,17 @@ class RandomSelect(object):
         return self.transforms2(img, target)
 
 
+class RandomColorJitter(object):
+    def __init__(self, brightness=0.9, contrast=0.5, saturation=0.5, hue=0.3):
+        super().__init__()
+        self.jitter = T.ColorJitter(brightness, contrast, saturation, hue)
+
+    def __call__(self, img, target):
+        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        img = self.jitter(img)
+        return img, target
+
+
 if __name__ == '__main__':
 
     aug_mode = 'photometric'
@@ -193,15 +208,17 @@ if __name__ == '__main__':
     if aug_mode == 'photometric':
         photo_aug = PhotometricDistort()
         hsv_aug = RandomHSV()
+        jitter_aug = RandomColorJitter()
         img_path = 'dataset/data/bev/fev2bev/front.png'
         img = cv2.imread(img_path)
-        num = 10
+        num = 8
         tgt1, _ = photo_aug([img] * num, None)
         tgt2, _ = photo_aug([img] * num, None)
         augs = []
         for i in range(num):
             tgt3, _ = hsv_aug(img, None)
-            aug = np.concatenate([img, tgt1[i], tgt2[i], tgt3], axis=1)
+            tgt4, _ = jitter_aug(img, None)
+            aug = np.concatenate([img, tgt1[i], tgt2[i], tgt3, tgt4], axis=1)
             augs.append(aug)
         vs = np.concatenate(augs, axis=0)
         vs_gray = cv2.cvtColor(vs, cv2.COLOR_BGR2GRAY)

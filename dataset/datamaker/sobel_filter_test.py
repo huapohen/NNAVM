@@ -5,6 +5,34 @@ import numpy as np
 from skimage import morphology, img_as_ubyte
 
 
+class FilterNonTextrueFrame(object):
+    def __init__(self, coef1=5000, coef2=10, coef3=60):
+        super().__init__()
+        self.sobel_pixels_threshshold = coef1
+        self.obj_min_pixel_filter = coef2
+        self.binary_threshshold = coef3
+
+    def __call__(self, image):
+        grad_x = cv2.Sobel(image, cv2.CV_16S, 1, 0)
+        grad_y = cv2.Sobel(image, cv2.CV_16S, 0, 1)
+        gradx = cv2.convertScaleAbs(grad_x)
+        grady = cv2.convertScaleAbs(grad_y)
+        add_image = cv2.addWeighted(gradx, 0.5, grady, 0.5, 0)
+        _, thresh = cv2.threshold(
+            src=add_image,
+            thresh=self.binary_threshshold,
+            maxval=255,
+            type=cv2.THRESH_BINARY,
+        )
+        thresh_bool = thresh > 0
+        mask = morphology.remove_small_objects(thresh_bool, self.obj_min_pixel_filter)
+        pix_sum = mask.sum()
+        is_filter = False
+        if mask.sum() < self.sobel_pixels_threshshold:
+            is_filter = True
+        return is_filter, pix_sum
+
+
 def sobel_demo1(image, sv_dir):
     grad_x = cv2.Sobel(image, cv2.CV_16S, 1, 0)
     grad_y = cv2.Sobel(image, cv2.CV_16S, 0, 1)

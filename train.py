@@ -101,6 +101,7 @@ def train(manager):
             losses = compute_losses(params, data)
 
             manager.optimizer.zero_grad()
+            # with torch.autograd.set_detect_anomaly(True):
             with torch.autograd.set_detect_anomaly(False):
                 losses["total_loss"].backward()
 

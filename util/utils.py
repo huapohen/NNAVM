@@ -3,22 +3,25 @@ from torch import nn
 import torch
 
 
-
-def conv_norm_act(in_dims,
-                  out_dims,
-                  kernel_size,
-                  stride,
-                  padding='same',
-                  norm=nn.BatchNorm2d,
-                  act=nn.LeakyReLU(0.1)):
+def conv_norm_act(
+    in_dims,
+    out_dims,
+    kernel_size,
+    stride,
+    padding='same',
+    norm=nn.BatchNorm2d,
+    act=nn.LeakyReLU(0.1),
+):
     """Define a convolution with norm and activation."""
 
-    conv = nn.Conv2d(in_channels=in_dims,
-                     out_channels=out_dims,
-                     kernel_size=kernel_size,
-                     stride=stride,
-                     padding=padding,
-                     bias=False)
+    conv = nn.Conv2d(
+        in_channels=in_dims,
+        out_channels=out_dims,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        bias=False,
+    )
     norm = norm(out_dims)
     act = act
     layers = [conv, norm, act]
@@ -28,14 +31,12 @@ def conv_norm_act(in_dims,
 def detector_block(in_dims):
     """Define a unit composite of a squeeze(1x1 conv) and expand(3x3 conv) unit."""
     layers = []
-    layers += conv_norm_act(in_dims=in_dims,
-                            out_dims=in_dims // 2,
-                            kernel_size=1,
-                            stride=1)
-    layers += conv_norm_act(in_dims=in_dims // 2,
-                            out_dims=in_dims,
-                            kernel_size=3,
-                            stride=1)
+    layers += conv_norm_act(
+        in_dims=in_dims, out_dims=in_dims // 2, kernel_size=1, stride=1
+    )
+    layers += conv_norm_act(
+        in_dims=in_dims // 2, out_dims=in_dims, kernel_size=3, stride=1
+    )
     return layers
 
 
@@ -44,11 +45,11 @@ class Darknet(nn.Module):
     depth2blocks = {21: [1, 2, 2, 1], 53: [2, 8, 8, 4]}
 
     def __init__(
-            self,
-            depth,
-            in_channels=3,
-            stem_out_channels=32,
-            out_features=("dark3", "dark4", "dark5"),
+        self,
+        depth,
+        in_channels=3,
+        stem_out_channels=32,
+        out_features=("dark3", "dark4", "dark5"),
     ):
         """
         Args:
@@ -62,11 +63,7 @@ class Darknet(nn.Module):
         assert out_features, "please provide output features of Darknet"
         self.out_features = out_features
         self.stem = nn.Sequential(
-            BaseConv(in_channels,
-                     stem_out_channels,
-                     ksize=3,
-                     stride=1,
-                     act="lrelu"),
+            BaseConv(in_channels, stem_out_channels, ksize=3, stride=1, act="lrelu"),
             *self.make_group_layer(stem_out_channels, num_blocks=1, stride=2),
         )
         in_channels = stem_out_channels * 2  # 64
@@ -75,50 +72,44 @@ class Darknet(nn.Module):
         # create darknet with `stem_out_channels` and `num_blocks` layers.
         # to make model structure more clear, we don't use `for` statement in python.
         self.dark2 = nn.Sequential(
-            *self.make_group_layer(in_channels, num_blocks[0], stride=2))
+            *self.make_group_layer(in_channels, num_blocks[0], stride=2)
+        )
         in_channels *= 2  # 128
         self.dark3 = nn.Sequential(
-            *self.make_group_layer(in_channels, num_blocks[1], stride=2))
+            *self.make_group_layer(in_channels, num_blocks[1], stride=2)
+        )
         in_channels *= 2  # 256
         self.dark4 = nn.Sequential(
-            *self.make_group_layer(in_channels, num_blocks[2], stride=2))
+            *self.make_group_layer(in_channels, num_blocks[2], stride=2)
+        )
         in_channels *= 2  # 512
 
         self.dark5 = nn.Sequential(
             *self.make_group_layer(in_channels, num_blocks[3], stride=2),
-            *self.make_spp_block([in_channels, in_channels * 2],
-                                 in_channels * 2),
+            *self.make_spp_block([in_channels, in_channels * 2], in_channels * 2),
         )
 
-    def make_group_layer(self,
-                         in_channels: int,
-                         num_blocks: int,
-                         stride: int = 1):
+    def make_group_layer(self, in_channels: int, num_blocks: int, stride: int = 1):
         "starts with conv layer then has `num_blocks` `ResLayer`"
         return [
-            BaseConv(in_channels,
-                     in_channels * 2,
-                     ksize=3,
-                     stride=stride,
-                     act="lrelu"),
+            BaseConv(in_channels, in_channels * 2, ksize=3, stride=stride, act="lrelu"),
             *[(ResLayer(in_channels * 2)) for _ in range(num_blocks)],
         ]
 
     def make_spp_block(self, filters_list, in_filters):
-        m = nn.Sequential(*[
-            BaseConv(in_filters, filters_list[0], 1, stride=1, act="lrelu"),
-            BaseConv(
-                filters_list[0], filters_list[1], 3, stride=1, act="lrelu"),
-            SPPBottleneck(
-                in_channels=filters_list[1],
-                out_channels=filters_list[0],
-                activation="lrelu",
-            ),
-            BaseConv(
-                filters_list[0], filters_list[1], 3, stride=1, act="lrelu"),
-            BaseConv(
-                filters_list[1], filters_list[0], 1, stride=1, act="lrelu"),
-        ])
+        m = nn.Sequential(
+            *[
+                BaseConv(in_filters, filters_list[0], 1, stride=1, act="lrelu"),
+                BaseConv(filters_list[0], filters_list[1], 3, stride=1, act="lrelu"),
+                SPPBottleneck(
+                    in_channels=filters_list[1],
+                    out_channels=filters_list[0],
+                    activation="lrelu",
+                ),
+                BaseConv(filters_list[0], filters_list[1], 3, stride=1, act="lrelu"),
+                BaseConv(filters_list[1], filters_list[0], 1, stride=1, act="lrelu"),
+            ]
+        )
         return m
 
     def forward(self, x):
@@ -137,14 +128,16 @@ class Darknet(nn.Module):
 
 
 class CSPDarknet(nn.Module):
-    def __init__(self,
-                 in_dim,
-                 dep_mul,
-                 wid_mul,
-                 out_features=("dark3", "dark4", "dark5"),
-                 depthwise=False,
-                 act="silu",
-                 norm='bn'):
+    def __init__(
+        self,
+        in_dim,
+        dep_mul,
+        wid_mul,
+        out_features=("dark3", "dark4", "dark5"),
+        depthwise=False,
+        act="silu",
+        norm='bn',
+    ):
         super().__init__()
         assert out_features, "please provide output features of Darknet"
         self.out_features = out_features
@@ -159,65 +152,57 @@ class CSPDarknet(nn.Module):
         # dark2
         self.dark2 = nn.Sequential(
             Conv(base_channels, base_channels * 2, 3, 2, act=act, norm=norm),
-            CSPLayer(base_channels * 2,
-                     base_channels * 2,
-                     depth=base_depth,
-                     depthwise=depthwise,
-                     act=act,
-                     norm=norm),
+            CSPLayer(
+                base_channels * 2,
+                base_channels * 2,
+                depth=base_depth,
+                depthwise=depthwise,
+                act=act,
+                norm=norm,
+            ),
         )
 
         # dark3
         self.dark3 = nn.Sequential(
-            Conv(base_channels * 2,
-                 base_channels * 4,
-                 3,
-                 2,
-                 act=act,
-                 norm=norm),
-            CSPLayer(base_channels * 4,
-                     base_channels * 4,
-                     depth=base_depth * 3,
-                     depthwise=depthwise,
-                     act=act,
-                     norm=norm),
+            Conv(base_channels * 2, base_channels * 4, 3, 2, act=act, norm=norm),
+            CSPLayer(
+                base_channels * 4,
+                base_channels * 4,
+                depth=base_depth * 3,
+                depthwise=depthwise,
+                act=act,
+                norm=norm,
+            ),
         )
 
         # dark4
         self.dark4 = nn.Sequential(
-            Conv(base_channels * 4,
-                 base_channels * 8,
-                 3,
-                 2,
-                 act=act,
-                 norm=norm),
-            CSPLayer(base_channels * 8,
-                     base_channels * 8,
-                     depth=base_depth * 3,
-                     depthwise=depthwise,
-                     act=act,
-                     norm=norm),
+            Conv(base_channels * 4, base_channels * 8, 3, 2, act=act, norm=norm),
+            CSPLayer(
+                base_channels * 8,
+                base_channels * 8,
+                depth=base_depth * 3,
+                depthwise=depthwise,
+                act=act,
+                norm=norm,
+            ),
         )
 
         # dark5
         self.dark5 = nn.Sequential(
-            Conv(base_channels * 8,
-                 base_channels * 16,
-                 3,
-                 2,
-                 act=act,
-                 norm=norm),
-            SPPBottleneck(base_channels * 16,
-                          base_channels * 16,
-                          activation=act,
-                          norm=norm),
-            CSPLayer(base_channels * 16,
-                     base_channels * 16,
-                     depth=base_depth,
-                     shortcut=False,
-                     depthwise=depthwise,
-                     act=act,
-                     norm=norm),
+            Conv(base_channels * 8, base_channels * 16, 3, 2, act=act, norm=norm),
+            SPPBottleneck(
+                base_channels * 16, base_channels * 16, activation=act, norm=norm
+            ),
+            CSPLayer(
+                base_channels * 16,
+                base_channels * 16,
+                depth=base_depth,
+                shortcut=False,
+                depthwise=depthwise,
+                act=act,
+                norm=norm,
+            ),
         )
 
     def forward(self, x):
@@ -237,6 +222,7 @@ class CSPDarknet(nn.Module):
 
 class SiLU(nn.Module):
     """export-friendly version of nn.SiLU()"""
+
     @staticmethod
     def forward(x):
         return x * torch.sigmoid(x)
@@ -259,15 +245,17 @@ def get_activation(name="silu", inplace=True):
 class BaseConv(nn.Module):
     """A Conv2d -> Batchnorm -> silu/leaky relu block"""
 
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 ksize,
-                 stride,
-                 groups=1,
-                 bias=False,
-                 act="silu",
-                 norm='bn'):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        ksize,
+        stride,
+        groups=1,
+        bias=False,
+        act="silu",
+        norm='bn',
+    ):
         super().__init__()
         # same padding
         pad = (ksize - 1) // 2
@@ -296,28 +284,22 @@ class BaseConv(nn.Module):
 class DWConv(nn.Module):
     """Depthwise Conv + Conv"""
 
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 ksize,
-                 stride=1,
-                 act="silu",
-                 norm='bn'):
+    def __init__(
+        self, in_channels, out_channels, ksize, stride=1, act="silu", norm='bn'
+    ):
         super().__init__()
-        self.dconv = BaseConv(in_channels,
-                              in_channels,
-                              ksize=ksize,
-                              stride=stride,
-                              groups=in_channels,
-                              act=act,
-                              norm=norm)
-        self.pconv = BaseConv(in_channels,
-                              out_channels,
-                              ksize=1,
-                              stride=1,
-                              groups=1,
-                              act=act,
-                              norm=norm)
+        self.dconv = BaseConv(
+            in_channels,
+            in_channels,
+            ksize=ksize,
+            stride=stride,
+            groups=in_channels,
+            act=act,
+            norm=norm,
+        )
+        self.pconv = BaseConv(
+            in_channels, out_channels, ksize=1, stride=1, groups=1, act=act, norm=norm
+        )
 
     def forward(self, x):
         x = self.dconv(x)
@@ -326,29 +308,25 @@ class DWConv(nn.Module):
 
 class Bottleneck(nn.Module):
     # Standard bottleneck
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 shortcut=True,
-                 expansion=0.5,
-                 depthwise=False,
-                 act="silu",
-                 norm='bn'):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        shortcut=True,
+        expansion=0.5,
+        depthwise=False,
+        act="silu",
+        norm='bn',
+    ):
         super().__init__()
         hidden_channels = int(out_channels * expansion)
         Conv = DWConv if depthwise else BaseConv
-        self.conv1 = BaseConv(in_channels,
-                              hidden_channels,
-                              1,
-                              stride=1,
-                              act=act,
-                              norm=norm)
-        self.conv2 = Conv(hidden_channels,
-                          out_channels,
-                          3,
-                          stride=1,
-                          act=act,
-                          norm=norm)
+        self.conv1 = BaseConv(
+            in_channels, hidden_channels, 1, stride=1, act=act, norm=norm
+        )
+        self.conv2 = Conv(
+            hidden_channels, out_channels, 3, stride=1, act=act, norm=norm
+        )
         self.use_add = shortcut and in_channels == out_channels
 
     def forward(self, x):
@@ -364,16 +342,12 @@ class ResLayer(nn.Module):
     def __init__(self, in_channels: int):
         super().__init__()
         mid_channels = in_channels // 2
-        self.layer1 = BaseConv(in_channels,
-                               mid_channels,
-                               ksize=1,
-                               stride=1,
-                               act="lrelu")
-        self.layer2 = BaseConv(mid_channels,
-                               in_channels,
-                               ksize=3,
-                               stride=1,
-                               act="lrelu")
+        self.layer1 = BaseConv(
+            in_channels, mid_channels, ksize=1, stride=1, act="lrelu"
+        )
+        self.layer2 = BaseConv(
+            mid_channels, in_channels, ksize=3, stride=1, act="lrelu"
+        )
 
     def forward(self, x):
         out = self.layer2(self.layer1(x))
@@ -383,31 +357,29 @@ class ResLayer(nn.Module):
 class SPPBottleneck(nn.Module):
     """Spatial pyramid pooling layer used in YOLOv3-SPP"""
 
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_sizes=(5, 9, 13),
-                 activation="silu",
-                 norm='bn'):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_sizes=(5, 9, 13),
+        activation="silu",
+        norm='bn',
+    ):
         super().__init__()
         hidden_channels = in_channels // 2
-        self.conv1 = BaseConv(in_channels,
-                              hidden_channels,
-                              1,
-                              stride=1,
-                              act=activation,
-                              norm=norm)
-        self.m = nn.ModuleList([
-            nn.MaxPool2d(kernel_size=ks, stride=1, padding=ks // 2)
-            for ks in kernel_sizes
-        ])
+        self.conv1 = BaseConv(
+            in_channels, hidden_channels, 1, stride=1, act=activation, norm=norm
+        )
+        self.m = nn.ModuleList(
+            [
+                nn.MaxPool2d(kernel_size=ks, stride=1, padding=ks // 2)
+                for ks in kernel_sizes
+            ]
+        )
         conv2_channels = hidden_channels * (len(kernel_sizes) + 1)
-        self.conv2 = BaseConv(conv2_channels,
-                              out_channels,
-                              1,
-                              stride=1,
-                              act=activation,
-                              norm=norm)
+        self.conv2 = BaseConv(
+            conv2_channels, out_channels, 1, stride=1, act=activation, norm=norm
+        )
 
     def forward(self, x):
         x = self.conv1(x)
@@ -419,15 +391,17 @@ class SPPBottleneck(nn.Module):
 class CSPLayer(nn.Module):
     """C3 in yolov5, CSP Bottleneck with 3 convolutions"""
 
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 depth=1,
-                 shortcut=True,
-                 expansion=0.5,
-                 depthwise=False,
-                 act="silu",
-                 norm='bn'):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        depth=1,
+        shortcut=True,
+        expansion=0.5,
+        depthwise=False,
+        act="silu",
+        norm='bn',
+    ):
         """
         Args:
             in_channels (int): input channels.
@@ -437,32 +411,26 @@ class CSPLayer(nn.Module):
         # ch_in, ch_out, number, shortcut, groups, expansion
         super().__init__()
         hidden_channels = int(out_channels * expansion)  # hidden channels
-        self.conv1 = BaseConv(in_channels,
-                              hidden_channels,
-                              1,
-                              stride=1,
-                              act=act,
-                              norm=norm)
-        self.conv2 = BaseConv(in_channels,
-                              hidden_channels,
-                              1,
-                              stride=1,
-                              act=act,
-                              norm=norm)
-        self.conv3 = BaseConv(2 * hidden_channels,
-                              out_channels,
-                              1,
-                              stride=1,
-                              act=act,
-                              norm=norm)
+        self.conv1 = BaseConv(
+            in_channels, hidden_channels, 1, stride=1, act=act, norm=norm
+        )
+        self.conv2 = BaseConv(
+            in_channels, hidden_channels, 1, stride=1, act=act, norm=norm
+        )
+        self.conv3 = BaseConv(
+            2 * hidden_channels, out_channels, 1, stride=1, act=act, norm=norm
+        )
         module_list = [
-            Bottleneck(hidden_channels,
-                       hidden_channels,
-                       shortcut,
-                       1.0,
-                       depthwise,
-                       act=act,
-                       norm=norm) for _ in range(depth)
+            Bottleneck(
+                hidden_channels,
+                hidden_channels,
+                shortcut,
+                1.0,
+                depthwise,
+                act=act,
+                norm=norm,
+            )
+            for _ in range(depth)
         ]
         self.m = nn.Sequential(*module_list)
 
@@ -477,20 +445,13 @@ class CSPLayer(nn.Module):
 class Focus(nn.Module):
     """Focus width and height information into channel space."""
 
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 ksize=1,
-                 stride=1,
-                 act="silu",
-                 norm='bn'):
+    def __init__(
+        self, in_channels, out_channels, ksize=1, stride=1, act="silu", norm='bn'
+    ):
         super().__init__()
-        self.conv = BaseConv(in_channels * 4,
-                             out_channels,
-                             ksize,
-                             stride,
-                             act=act,
-                             norm=norm)
+        self.conv = BaseConv(
+            in_channels * 4, out_channels, ksize, stride, act=act, norm=norm
+        )
 
     def forward(self, x):
         # shape of x (b,c,w,h) -> y(b,4c,w/2,h/2)
@@ -522,10 +483,10 @@ def get_grid(batch_size, h, w, start=0):
     yy = yy.view(-1, 1).repeat(1, w)
     xx = xx.view(1, 1, h, w).repeat(batch_size, 1, 1, 1)
     yy = yy.view(1, 1, h, w).repeat(batch_size, 1, 1, 1)
-    ones = torch.ones_like(
-        xx).cuda() if torch.cuda.is_available() else torch.ones_like(xx)
+    ones = (
+        torch.ones_like(xx).cuda() if torch.cuda.is_available() else torch.ones_like(xx)
+    )
     grid = torch.cat((xx, yy, ones), 1).float()
 
-    grid[:, :
-         2, :, :] = grid[:, :2, :, :] + start  # add the coordinate of left top
+    grid[:, :2, :, :] = grid[:, :2, :, :] + start  # add the coordinate of left top
     return grid

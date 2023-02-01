@@ -167,9 +167,9 @@ class ExampleMTP:
                 assert len(args) == 2
                 if not args[1]:
                     raise Exception("imwrite error")
-                return
+                return None
 
-        imgs_list = []
+        result = {}
         with tqdm(total=len(self.camera_list)) as t:
             for camera in tqdm(self.camera_list):
                 print(camera)
@@ -177,7 +177,7 @@ class ExampleMTP:
                     input_values = (self.threads_num, names, self.read_dir)
                 elif self.mode == 'write':
                     input_values = (self.threads_num, dst, names, self.save_dir)
-                imgs = self.mtp.multi_threads_process(
+                mtp_result = self.mtp.multi_threads_process(
                     input_values=input_values,
                     batch_size=len(names) if dst is None else len(dst),
                     threads_num=self.threads_num,
@@ -185,14 +185,16 @@ class ExampleMTP:
                     func_preprocess=_preprocess,
                     func_postprocess=_postprocess,
                 )
-                img_batch = torch.stack(imgs, dim=0)
-                if self.enable_cuda:
-                    img_batch = img_batch.cuda()
-                imgs_list[camera] = img_batch
-
+                if self.mode == 'read':
+                    img_batch = torch.stack(mtp_result, dim=0)
+                    if self.enable_cuda:
+                        img_batch = img_batch.cuda()
+                    result[camera] = img_batch
+                else:
+                    result = None
                 t.update()
 
-        return imgs_list
+        return result
 
 
 if __name__ == '__main__':

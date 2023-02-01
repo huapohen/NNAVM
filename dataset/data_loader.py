@@ -24,6 +24,7 @@ def collate_fn(batch):
         for k, v in x.items():
             if k in [
                 'image',
+                'fev',
                 'bev_origin',
                 'undist',
                 'offset',
@@ -50,6 +51,7 @@ def collate_fn(batch):
             'coords_bev_origin',
             'offset',
             'coords_bev_perturbed',
+            'fev',
             'undist',
             'bev_origin',
             'bev_perturbed',

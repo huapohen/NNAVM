@@ -1,5 +1,6 @@
 import torch
-from util.torch_op import dlt_homo, get_warp_image
+from util.torch_func_op import dlt_homo, warp_image_u2b
+from util.torch_class_op import HomoTorchOP, warp_image_f2b
 
 
 def fetch_net(params):
@@ -21,21 +22,24 @@ def second_stage(params, data):
     if params.nn_output_do_tanh:
         data['offset_pred'] = data['offset_pred'].tanh() * params.max_shift_pixels
 
+    dlt_homo_op = HomoTorchOP()
+    _warp_func_op = {'fev': warp_image_f2b, 'undist': warp_image_u2b}
+
     # data['offset_pred'] = data['offset']
     data['coords_bev_perturbed_pred'] = data["coords_bev_origin"] + data['offset_pred']
-    data['H_bev_pert_pred_to_origin'] = dlt_homo(
+    data['H_bev_pert_pred_to_origin'] = dlt_homo_op(
         data["coords_bev_perturbed_pred"], data['coords_bev_origin']
     )
 
     if params.bev_mask_mode:
-        bs = int(data['image'].shape[0] / len(params.camera_list))
-        data['bev_origin_pred'] = get_warp_image(
+        data['bev_origin_pred'] = _warp_func_op[params.src_img_mode](
             params, bs, data['H_bev_pert_pred_to_origin'], data['bev_perturbed']
         )
         mask = [torch.ones_like(img) for img in data['bev_perturbed']]
-        data['mask_bev_origin_pred'] = get_warp_image(
-            params, bs, data['H_bev_pert_pred_to_origin'], mask
+        data['mask_bev_origin_pred'] = _warp_func_op[params.src_img_mode](
+            params, bs, data['homo_b2u_pert_pred'], mask
         )
+
         data['bev_origin_masked'] = [
             x[0] * x[1]
             for x in list(zip(data['bev_origin'], data['mask_bev_origin_pred']))
@@ -46,29 +50,29 @@ def second_stage(params, data):
     if params.train_eval_inference in ['train', 'eval']:
         # train & test:
         #   the input fev and undist is ground thruth, correct images
-        data['H_undist_to_bev_pert'] = dlt_homo(
+        data['homo_u2b_pert'] = dlt_homo_op(
             data["coords_undist"], data['coords_bev_perturbed']
         )
         # undist -> bev perturbed -> bev pred
-        data['homo_u2b'] = (
-            data['H_bev_pert_pred_to_origin'] @ data['H_undist_to_bev_pert']
+        data['homo_u2b'] = data['H_bev_pert_pred_to_origin'] @ data['homo_u2b_pert']
+        data['homo_b2u'] = torch.inverse(data['homo_u2b'])
+
+        data['homo_b2u_pert_pred'] = dlt_homo_op(
+            data['coords_bev_perturbed_pred'], data["coords_undist"]
         )
 
-        # used for visualization
-        data['H_undist_to_bev_pert_pred'] = dlt_homo(
-            data["coords_undist"], data['coords_bev_perturbed_pred']
+        data['bev_perturbed_pred'] = _warp_func_op[params.src_img_mode](
+            params, bs, data['homo_b2u_pert_pred'], data[params.src_img_mode]
         )
-        data['bev_perturbed_pred'] = get_warp_image(
-            params, bs, data['H_undist_to_bev_pert_pred'], data['undist']
-        )
+
         data['coords_bev_origin_pred'] = (
             data["coords_bev_perturbed"] - data['offset_pred']
         )
 
         if params.second_stage_image_supervised:
             # In inference, input doesn't have coords_bev_perturbed, which is supervised info.
-            data['homo_u2b'] = dlt_homo(
-                data["coords_undist"], data['coords_bev_origin_pred']
+            data['homo_b2u'] = dlt_homo_op(
+                data['coords_bev_origin_pred'], data["coords_undist"]
             )
 
     elif params.train_eval_inference == 'inference':
@@ -77,15 +81,14 @@ def second_stage(params, data):
         #   so the undistord images may be perturbed.
         #   For example, a car drives over a speed bump.
         #   Similarly, the car drove through the flat ground without perturbed.
-        data['H_undist_to_bev_origin'] = dlt_homo(
+        data['homo_u2b_origin'] = dlt_homo_op(
             data["coords_undist"], data['coords_bev_origin']
         )
         # (1) H_u2? @ undist_real-> bev_real
         # (2) H_?2b @ bev_real -> bev_origin_pred
         # (1)+(2): (H_?2b @ H_u2?= Homo) @ undist_real -> bev_origin_pred
-        data['homo_u2b'] = (
-            data['H_bev_pert_pred_to_origin'] @ data['H_undist_to_bev_origin']
-        )
+        data['homo_u2b'] = data['H_bev_pert_pred_to_origin'] @ data['homo_u2b_origin']
+        data['homo_b2u'] = torch.inverse(data['homo_u2b'])
     else:
         raise ValueError
 
@@ -94,8 +97,8 @@ def second_stage(params, data):
     # because undist_? in real world, maybe correct or error (same as perturbed)
     # add some right images as negtive samples
 
-    data['bev_origin_pred'] = get_warp_image(
-        params, bs, data['homo_u2b'], data['undist']
+    data['bev_origin_pred'] = _warp_func_op[params.src_img_mode](
+        params, bs, data['homo_b2u'], data[params.src_img_mode]
     )
 
     return data

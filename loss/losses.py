@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     import ipdb
     import numpy as np
-    from util.torch_op import dlt_homo
+    from util.torch_func_op import dlt_homo
 
     ipdb.set_trace()
     src_pts = np.array([10, 10, 100, 10, 10, 50, 100, 50], dtype=np.float32).reshape(

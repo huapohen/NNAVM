@@ -34,7 +34,7 @@ def dlt_homo(src_pt, dst_pt, method="Axb"):
         U, S, V = torch.svd(A)
         V = V.transpose(-2, -1).conj()
         H = V[:, -1].view(batch_size, 3, 3)
-        H *= 1 / H[:, -1, -1].view(batch_size, 1, 1)
+        H = H * (1 / H[:, -1, -1].view(batch_size, 1, 1))
     elif method == "Axb":
         A = torch.cat((M1, -M2), dim=-1)
         B = M3
@@ -223,14 +223,13 @@ def warp_image(I, vgrid, train=True, enable_cuda=True):
     return output
 
 
-def get_warp_image(params, batch_size, homo, src):
+def warp_image_u2b(params, batch_size, homo, src):
     dst = []
     for i, cam in enumerate(params.camera_list):
         w, h = params.wh_bev_fblr[cam]
         grid = get_grid(batch_size, h, w, 0, params.cuda)
         h_this = homo[i * batch_size : (i + 1) * batch_size]
-        h_inv = torch.inverse(h_this)
-        flow, vgrid = get_flow_vgrid(h_inv, grid, h, w, 1)
+        flow, vgrid = get_flow_vgrid(h_this, grid, h, w, 1)
         hgrid = vgrid + flow
         dst_this = warp_image(src[i], hgrid)
         dst.append(dst_this)

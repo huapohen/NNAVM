@@ -108,7 +108,7 @@ class DLT(nn.Module):
             U, S, V = torch.svd(A)
             V = V.transpose(-2, -1).conj()
             H = V[:, -1].view(self.batch_size, 3, 3)
-            H *= 1 / H[:, -1, -1].view(self.batch_size, 1, 1)
+            H = H * (1 / H[:, -1, -1].view(self.batch_size, 1, 1))
             return H
 
         elif method == 'Axb':

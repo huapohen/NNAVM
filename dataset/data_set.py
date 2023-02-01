@@ -6,10 +6,11 @@ import ipdb
 import torch
 import random
 import numpy as np
-from easydict import EasyDict
+from easydict import EasyDict as dic
 from torchvision import transforms as T
 from torchvision.transforms import ToTensor
 from torch.utils.data import Dataset
+from dataset.augment import RandomAugment
 
 
 class DatasetPipeline(Dataset):
@@ -22,11 +23,12 @@ class DatasetPipeline(Dataset):
         else:
             self.data_ratio = params.test_data_ratio
         self.src_num_mode = params.src_num_mode
-        self.src_num_mode_key_name = EasyDict(params.src_num_mode_key_name)
+        self.src_num_mode_key_name = dic(params.src_num_mode_key_name)
         self.camera_list = params.camera_list
         random.seed(params.seed)
         self.data_sample = []
         self.perturbed_pts = {}
+        self.calibrated_pts = {}
         self.sample_number = {}
         for data_ratio in self.data_ratio:
             set_name = data_ratio[0]
@@ -49,11 +51,16 @@ class DatasetPipeline(Dataset):
             }
             # perturbed points offset
             perturbed_pts_path = os.path.join(base_path, 'perturbed_points.json')
+            calibrated_pts_path = os.path.join(base_path, 'detected_points.json')
             with open(perturbed_pts_path, 'r') as f:
                 self.perturbed_pts[set_name] = json.load(f)
+            with open(calibrated_pts_path, 'r') as f:
+                self.calibrated_pts[set_name] = json.load(f)
         if params.enable_random and self.mode != "test":
             random.shuffle(self.data_sample)
         self.sample_number["total_samples"] = len(self.data_sample)
+        self.random_augment = RandomAugment(params)
+        self.aug_params = dic(params.augment_parameters)
 
     def __len__(self):
         return len(self.data_sample)
@@ -68,6 +75,29 @@ class DatasetPipeline(Dataset):
         '''
         params = self.params
         base_path, name = self.data_sample[index]
+        data = {}
+        task_mode = params.dataloader_task_mode
+        if 'offset' in task_mode:
+            data['offset'] = self.get_offset(base_path, name)
+        if 'coords' in task_mode:
+            pts1, pts2, pts3 = self.get_coords(base_path, name)
+            data['coords_undist'] = pts1
+            data['coords_bev_origin'] = pts2
+            data['coords_bev_perturbed'] = pts3
+        if 'fev' in task_mode and params.src_img_mode == 'fev':
+            data['fev'] = self.get_fev(base_path, name)
+        if 'undist' in task_mode and params.src_img_mode == 'undist':
+            data['undist'] = self.get_undist(base_path, name)
+        if 'bev_origin' in task_mode:
+            data['bev_origin'] = self.get_bev_origin(base_path, name)
+        if 'bev_perturbed' in task_mode:
+            data['bev_perturbed'] = self.get_bev_perturbed(base_path, name)
+        if 'name' in task_mode:
+            data['name'] = name
+        if 'path' in task_mode:
+            data['path'] = base_path
+        data['camera_list'] = self.camera_list
+
         # input bev: crop & resize & normalize
         img_fblr = []
         for camera in self.camera_list:
@@ -77,43 +107,37 @@ class DatasetPipeline(Dataset):
                 camera,
                 f'{name}.{params.train_image_type}',
             )
-            ori = cv2.imread(img_path)
-            ori = cv2.cvtColor(ori, cv2.COLOR_BGR2GRAY)
-            dhdw_mode = 'fb' if camera in ['front', 'back'] else 'lr'
-            dh, dw = params.dh_fblr[dhdw_mode], params.dw_fblr[dhdw_mode]
-            _h = params.img_h * 2
-            _w = params.img_w * 2
-            img = ori[dh : dh + _h, dw : dw + _w]
-            img = cv2.resize(
-                img, (params.img_w, params.img_h), interpolation=cv2.INTER_AREA
-            )
+            img = cv2.imread(img_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             img = img[:, :, np.newaxis]
+            if params.is_align_fblr_resolution:
+                img = self.align_fblr_resolution(params, img, camera)
+            # augment
+            if params.is_startup_augment:
+                img, aug_pts = self.random_augment(img, data, camera)
             img = ToTensor()(img)
             img_fblr.append(img)
-
-        data = {}
         data['image'] = img_fblr
-        task_mode = params.dataloader_task_mode
-        if 'offset' in task_mode:
-            data['offset'] = self.get_offset(base_path, name)
-        if 'coords' in task_mode:
-            pts1, pts2, pts3 = self.get_coords(base_path, name)
-            data['coords_undist'] = pts1
-            data['coords_bev_origin'] = pts2
-            data['coords_bev_perturbed'] = pts3
-        if 'bev_origin' in task_mode:
-            data['bev_origin'] = self.get_bev_origin(base_path, name)
-        if 'undist' in task_mode:
-            data['undist'] = self.get_undist(base_path, name)
-        if 'bev_perturbed' in task_mode:
-            data['bev_perturbed'] = self.get_bev_perturbed(base_path, name)
-        if 'name' in task_mode:
-            data['name'] = name
-        if 'path' in task_mode:
-            data['path'] = base_path
-        data['camera_list'] = self.camera_list
+
+        if self.params.is_startup_augment and aug_pts is not None:
+            if self.aug_params.is_aug_perturbed_bev:
+                data['coords_bev_origin'] = data['coords_bev_origin'] + aug_pts
+                data['coords_bev_perturbed'] = data['coords_bev_perturbed'] + aug_pts
+            if self.aug_params.is_aug_perturbed_undist:
+                data['coords_undist'] = data['coords_undist'] + aug_pts
 
         return data
+
+    def align_fblr_resolution(self, params, img_ori, camera):
+        dhdw_mode = 'fb' if camera in ['front', 'back'] else 'lr'
+        dh, dw = params.dh_fblr[dhdw_mode], params.dw_fblr[dhdw_mode]
+        _h = params.img_h * 2
+        _w = params.img_w * 2
+        img = img_ori[dh : dh + _h, dw : dw + _w]
+        img = cv2.resize(
+            img, (params.img_w, params.img_h), interpolation=cv2.INTER_AREA
+        )
+        return img
 
     def get_offset(self, base_path, name):
         set_name = base_path.split(os.sep)[-2]
@@ -136,7 +160,7 @@ class DatasetPipeline(Dataset):
         if self.src_num_mode == self.src_num_mode_key_name.single:
             for camera in self.camera_list:
                 img_path = os.path.join(
-                    base_path, 'bev', self.params.bev_mode, f'{camera}.png'
+                    base_path, 'bev', self.params.single_bev_mode, f'{camera}.png'
                 )
                 img = cv2.imread(img_path)
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -157,6 +181,28 @@ class DatasetPipeline(Dataset):
         else:
             raise ValueError
         return bev_ori_fblr
+
+    def get_fev(self, base_path, name):
+        undist_fblr = []
+        if self.src_num_mode == self.src_num_mode_key_name.single:
+            for camera in self.camera_list:
+                img_path = os.path.join(base_path, 'fev', f'{camera}.jpg')
+                img = cv2.imread(img_path)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                img = torch.from_numpy(img).unsqueeze(0)
+                undist_fblr.append(img)
+        elif self.src_num_mode == self.src_num_mode_key_name.multi:
+            name_ori = name.split('_p')[0]
+            for camera in self.camera_list:
+                name = f'{name_ori}.{self.params.train_image_type}'
+                img_path = os.path.join(base_path, 'fev', camera, name)
+                img = cv2.imread(img_path)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                img = torch.from_numpy(img).unsqueeze(0)
+                undist_fblr.append(img)
+        else:
+            raise ValueError
+        return undist_fblr
 
     def get_undist(self, base_path, name):
         undist_fblr = []
@@ -200,9 +246,9 @@ class DatasetPipeline(Dataset):
         return bev_perturbed
 
     def get_coords(self, base_path, name):
-        det_pts_path = os.path.join(base_path, 'detected_points.json')
-        with open(det_pts_path, 'r') as f:
-            pts = json.load(f)
+        set_name = base_path.split(os.sep)[-2]
+        # calibrated points
+        calibrated_pts = self.calibrated_pts[set_name]
         if self.src_num_mode == self.src_num_mode_key_name.single:
             which_point = name
         elif self.src_num_mode == self.src_num_mode_key_name.multi:
@@ -210,8 +256,8 @@ class DatasetPipeline(Dataset):
         src_coords, dst_coords = [], []
         for camera in self.params.camera_list:
             index = self.params.perturbed_points_index
-            pt_src = pts["detected_points"][camera]
-            pt_dst = pts["corner_points"][camera]
+            pt_src = calibrated_pts["detected_points"][camera]
+            pt_dst = calibrated_pts["corner_points"][camera]
             pt_src = [[pt_src[i * 2], pt_src[i * 2 + 1]] for i in index]
             pt_dst = [[pt_dst[i * 2], pt_dst[i * 2 + 1]] for i in index]
             pt_src = torch.Tensor(pt_src).reshape(-1, 2)
@@ -220,16 +266,12 @@ class DatasetPipeline(Dataset):
             dst_coords.append(pt_dst)
         src_coords = torch.stack(src_coords)
         dst_coords = torch.stack(dst_coords)
-        #
-        pert_pts_path = os.path.join(base_path, 'perturbed_points.json')
-        with open(pert_pts_path, 'r') as f:
-            pert = json.load(f)
+        # perturbed points
+        pert_pts = self.perturbed_pts[set_name]
         perturbed_coords = []
         for camera in self.params.camera_list:
-            pt = pert[camera]['perturbed_points_list'][which_point]
+            pt = pert_pts[camera]['perturbed_points_list'][which_point]
             pt = torch.Tensor(pt).reshape(-1, 2)
             perturbed_coords.append(pt)
+        perturbed_coords = torch.stack(perturbed_coords)
         return src_coords, dst_coords, perturbed_coords
-
-    def data_aug(self, data):
-        return data
