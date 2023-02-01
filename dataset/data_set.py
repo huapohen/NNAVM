@@ -86,6 +86,7 @@ class DatasetPipeline(Dataset):
             data['coords_bev_perturbed'] = pts3
         if 'fev' in task_mode and params.src_img_mode == 'fev':
             data['fev'] = self.get_fev(base_path, name)
+            data['coords_undist'] = data['coords_undist'] * 2
         if 'undist' in task_mode and params.src_img_mode == 'undist':
             data['undist'] = self.get_undist(base_path, name)
         if 'bev_origin' in task_mode:
