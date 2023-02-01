@@ -56,7 +56,7 @@ class RemapTableTorchOP(object):
             + coefs[3] * angle_undistorted_p9
         )
         min_value = torch.tensor(1e-6, device=dv)
-        scale = torch.div(r_distort, r_undist.clamp_(min_value))
+        scale = torch.div(r_distort, r_undist.clamp(min_value))
         scale = scale.unsqueeze(-1)
         grids = grids * scale + dist_center
 
