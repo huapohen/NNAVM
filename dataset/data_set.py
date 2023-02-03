@@ -30,10 +30,11 @@ class DatasetPipeline(Dataset):
         self.perturbed_pts = {}
         self.calibrated_pts = {}
         self.sample_number = {}
+        self.assign_cam = 'front'
         for data_ratio in self.data_ratio:
             set_name = data_ratio[0]
             base_path = os.path.join(params.data_dir, set_name, self.mode)
-            camera_f = os.path.join(base_path, 'generate', 'front')
+            camera_f = os.path.join(base_path, 'generate', self.assign_cam)
             name_list = os.listdir(camera_f)
             name_list = [ele.split('.')[0] for ele in name_list]
             name_list = list(set(name_list))
@@ -102,12 +103,9 @@ class DatasetPipeline(Dataset):
         # input bev: crop & resize & normalize
         img_fblr = []
         for camera in self.camera_list:
-            img_path = os.path.join(
-                base_path,
-                'generate',
-                camera,
-                f'{name}.{params.train_image_type}',
-            )
+            name_cam = f'{name}.{params.train_image_type}'
+            name_cam = name_cam.replace(f'_{self.assign_cam}_', f'_{camera}_')
+            img_path = os.path.join(base_path, 'generate', camera, name_cam)
             img = cv2.imread(img_path)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             img = img[:, :, np.newaxis]
@@ -170,8 +168,9 @@ class DatasetPipeline(Dataset):
         elif self.src_num_mode == self.src_num_mode_key_name.multi:
             name_ori = name.split('_p')[0] + '_p0000'
             for camera in self.camera_list:
-                name = f'{name_ori}.{self.params.train_image_type}'
-                img_path = os.path.join(base_path, 'bev', camera, name)
+                name_cam = f'{name_ori}.{self.params.train_image_type}'
+                name_cam = name_cam.replace(f'_{self.assign_cam}_', f'_{camera}_')
+                img_path = os.path.join(base_path, 'bev', camera, name_cam)
                 if not os.path.exists(img_path):
                     print('img_path not exist: ', img_path)
                     sys.exit()
@@ -195,8 +194,9 @@ class DatasetPipeline(Dataset):
         elif self.src_num_mode == self.src_num_mode_key_name.multi:
             name_ori = name.split('_p')[0]
             for camera in self.camera_list:
-                name = f'{name_ori}.{self.params.train_image_type}'
-                img_path = os.path.join(base_path, 'fev', camera, name)
+                name_cam = f'{name_ori}.{self.params.train_image_type}'
+                name_cam = name_cam.replace(f'_{self.assign_cam}_', f'_{camera}_')
+                img_path = os.path.join(base_path, 'fev', camera, name_cam)
                 img = cv2.imread(img_path)
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
                 img = torch.from_numpy(img).unsqueeze(0)
@@ -217,8 +217,9 @@ class DatasetPipeline(Dataset):
         elif self.src_num_mode == self.src_num_mode_key_name.multi:
             name_ori = name.split('_p')[0]
             for camera in self.camera_list:
-                name = f'{name_ori}.{self.params.train_image_type}'
-                img_path = os.path.join(base_path, 'undist', camera, name)
+                name_cam = f'{name_ori}.{self.params.train_image_type}'
+                name_cam = name_cam.replace(f'_{self.assign_cam}_', f'_{camera}_')
+                img_path = os.path.join(base_path, 'undist', camera, name_cam)
                 img = cv2.imread(img_path)
                 if self.params.scale_undist != 1.0:
                     wh = img.shape[:2][::-1]
@@ -234,12 +235,9 @@ class DatasetPipeline(Dataset):
     def get_bev_perturbed(self, base_path, name):
         bev_perturbed = []
         for camera in self.camera_list:
-            img_path = os.path.join(
-                base_path,
-                'generate',
-                camera,
-                f'{name}.{self.params.train_image_type}',
-            )
+            name_cam = f'{name}.{self.params.train_image_type}'
+            name_cam = name_cam.replace(f'_{self.assign_cam}_', f'_{camera}_')
+            img_path = os.path.join(base_path, 'generate', camera, name_cam)
             ori = cv2.imread(img_path)
             ori = cv2.cvtColor(ori, cv2.COLOR_BGR2GRAY)
             ori = torch.from_numpy(ori).unsqueeze(0)

@@ -6,18 +6,18 @@ from yacs.config import CfgNode as CN
 
 
 def train_config(cfg):
-    cfg.camera_list = ["front"]
+    # cfg.camera_list = ["front"]
     # cfg.camera_list = ["front", 'back']
-    # cfg.camera_list = ["front", 'back', 'left', 'right']
-    cfg.exp_id = 7
-    cfg.gpu_used = '6_7'
+    cfg.camera_list = ["front", 'back', 'left', 'right']
+    cfg.exp_id = 9
+    cfg.gpu_used = '2_1'
     cfg.num_workers = 16
     cfg.num_epochs = 12
-    cfg.train_batch_size = 64
-    # cfg.src_img_mode = 'fev'
-    # cfg.train_data_ratio = [["v4", 1]]
-    cfg.src_img_mode = 'undist'
-    cfg.train_data_ratio = [["v3", 1]]
+    cfg.train_batch_size = 16
+    cfg.src_img_mode = 'fev'
+    cfg.train_data_ratio = [["v4", 1]]
+    # cfg.src_img_mode = 'undist'
+    # cfg.train_data_ratio = [["v3", 1]]
     cfg.src_num_mode = "multiple_driving_images"
     cfg.scale_undist = 0.5
     # cfg.model_train_type = "supervised"

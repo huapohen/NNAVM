@@ -2,7 +2,7 @@
 rtdir='/home/data/lwb/code'
 src='dynamicbev'
 dst='NNAVM'
-commit_detail='fev2bev unit test passed'
+commit_detail='input multi_cameras_images pass'
 
 cd ${rtdir}
 mv ${dst} ${dst}_bp
@@ -20,7 +20,7 @@ do
     cd ${rtdir}/${n}
     git add .
     git status
-    git commit -m \"${commit_detail}\"
+    git commit -m "${commit_detail}"
     git push
 done
 
