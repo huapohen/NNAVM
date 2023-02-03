@@ -8,7 +8,7 @@ cd ${rtdir}
 mv ${dst} ${dst}_bp
 cp -r ${rtdir}/${src} ${rtdir}/${dst}
 cd NNAVM
-rm -rf .git README.rd .gitignore
+rm -rf .git README.md
 cd ..
 cp -r ${dst}_bp/.git ${dst}/
 cp ${dst}_bp/README.md ${dst}/
@@ -19,7 +19,7 @@ do
     cd ${rtdir}/${n}
     git add .
     git status
-    git commit -m "${commit_detail}"
+    git commit -m \"${commit_detail}\"
     git push
 done
 
