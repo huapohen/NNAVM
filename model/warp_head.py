@@ -8,6 +8,8 @@ def warp_head(params, data):
     bs = int(data['image'].shape[0] / len(params.camera_list))
     params.calib_param = EasyDict(CalibrateParameter().__dict__)
 
+    data['coords_bev_perturbed_pred'] = data["coords_bev_origin"] + data['offset_pred']
+    
     data['H_bev_pert_pred_to_origin'] = dlt_homo(
         data["coords_bev_perturbed_pred"], data['coords_bev_origin']
     )

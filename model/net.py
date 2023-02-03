@@ -18,8 +18,6 @@ def second_stage(params, data):
     if params.nn_output_do_tanh:
         data['offset_pred'] = data['offset_pred'].tanh() * params.max_shift_pixels
 
-    data['coords_bev_perturbed_pred'] = data["coords_bev_origin"] + data['offset_pred']
-
     # get bev
     data = warp_head(params, data)
 

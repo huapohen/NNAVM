@@ -82,5 +82,5 @@ if __name__ == '__main__':
     params = {}
     calib_param = EasyDict(CalibrateParameter().__dict__)
     ipdb.set_trace()
-    params.__dict__.update(calib_param)
+    params.update(calib_param)
     print(params)

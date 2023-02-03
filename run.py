@@ -1,4 +1,5 @@
 from dataset.datamaker.bev_from_multi_fev import *
+from util.torch_func_op import unit_test_warp_image
 
 
 def run_bev_from_multi_fev():
@@ -18,4 +19,5 @@ def run_bev_from_multi_fev():
 
 if __name__ == "__main__":
 
-    run_bev_from_multi_fev()
+    # run_bev_from_multi_fev()
+    unit_test_warp_image()

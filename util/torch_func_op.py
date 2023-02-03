@@ -287,3 +287,52 @@ def warp_image_to_bev(params, batch_size, homo, src):
         dst_cam = warp_image(src[i], grids)
         dst.append(dst_cam)
     return dst
+
+
+def unit_test_warp_image():
+    '''
+    python -m util.torch_func_op
+    '''
+    import ipdb
+    import numpy as np
+    from easydict import EasyDict
+    from dataset.datamaker.calibrate_params import CalibrateParameter
+
+    calib_param = EasyDict(CalibrateParameter().__dict__)
+
+    dx = 300
+    dy = 0
+    offset = np.array([dx, dy, dx, dy, dx, dy, dx, dy])
+    pt_src = np.array([732, 784, 1236, 781, 282, 946, 1601, 916])
+    pt_dst = np.array([309, 216, 769, 216, 309, 316, 769, 316])
+    pt_dst += offset
+    pt_src = torch.Tensor(pt_src).float().reshape(1, -1, 2).cuda()
+    pt_dst = torch.Tensor(pt_dst).float().reshape(1, -1, 2).cuda()
+    h, w = 336, 1078
+    # ipdb.set_trace()
+    undist = cv2.imread('dataset/data/undist/front.jpg')
+    undist = torch.tensor(undist).permute(2, 0, 1).contiguous().unsqueeze(0).cuda()
+    h_b2u = dlt_homo(pt_dst, pt_src)
+    grid = get_grid(1, h, w, 0, True)
+    flow, vgrid = get_flow_vgrid(h_b2u, grid, h, w, 1)
+    grids = vgrid + flow
+    bev_u2b = warp_image(undist, grids)
+    bev_u2b = bev_u2b.detach().cpu()[0].permute(1, 2, 0).numpy()
+    cv2.imwrite(f'dataset/data/test/bev_u2b.jpg', bev_u2b)
+    # ipdb.set_trace()
+    fev = cv2.imread('dataset/data/fev/front.png')
+    fev = torch.tensor(fev).permute(2, 0, 1).contiguous().unsqueeze(0).cuda()
+    h_b2u = dlt_homo(pt_dst, pt_src * 2)
+    flow, vgrid = get_flow_vgrid(h_b2u, grid, h, w, 1)
+    grids = vgrid + flow
+    grids = grids.permute(0, 2, 3, 1).contiguous()
+    grids = undist_grids_to_fev(calib_param, grids)
+    bev_f2b = warp_image(fev, grids)
+    bev_f2b = bev_f2b.detach().cpu()[0].permute(1, 2, 0).numpy()
+    cv2.imwrite(f'dataset/data/test/bev_f2b.jpg', bev_f2b)
+    # ipdb.set_trace()
+
+
+if __name__ == '__main__':
+
+    unit_test_warp_image()
