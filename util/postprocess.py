@@ -45,7 +45,7 @@ def plot_indicator(params, pt_this, pt_gt, img_this, img_gt):
     color = (192, 192, 192)
     for i, ele in enumerate([psnr, ssim, pix, hpr]):
         cv2.putText(
-            img_this, ele, (460, 40 + i * 40), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2
+            img_this, ele, (430, 40 + i * 40), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2
         )
 
     return img_this
@@ -58,7 +58,15 @@ def plot_iter_info(params, img):
     ]
     txt_info = (cv2.FONT_HERSHEY_SIMPLEX, 1, (192, 192, 192), 2)
     for i, ele in enumerate(str_info):
-        cv2.putText(img, ele, (460, (i + 2) * 50), *txt_info)
+        cv2.putText(img, ele, (400, (i + 2) * 50), *txt_info)
+    return img
+
+
+def plot_offset_err(pts, img):
+    pred_err = (pts['offset_pred'] - pts['offset']).mean()
+    str_info = f'offset_err: {str(round(pred_err, 2))}'
+    txt_info = (cv2.FONT_HERSHEY_SIMPLEX, 1, (192, 192, 192), 2)
+    cv2.putText(img, str_info, (400, 4 * 50), *txt_info)
     return img
 
 
@@ -114,6 +122,7 @@ def plot_pt_unsupervised_kernel(params, pts, bevs_cam):
             img = plot_indicator(params, pt, pt_ori, img, img_ori)
         elif params.visualize_mode == 'train':
             img = plot_iter_info(params, img)
+            img = plot_offset_err(pts, img)
         img = _plot_point(pt_ori, 'bev_origin', img)
         img = _plot_point(pt, name, img)
         if name == 'bev_perturbed':
@@ -265,6 +274,8 @@ def visualize_unsupervised_kernel(params, data):
         'coords_bev_perturbed_pred',
         'coords_bev_origin_pred',  # supervised info
         'coords_bev_origin',
+        'offset_pred',
+        'offset',
     ]
     pts = {}
     for name in pt_name_list:
