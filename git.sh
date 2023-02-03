@@ -7,7 +7,7 @@ commit_detail='fev2bev unit test passed'
 cd ${rtdir}
 mv ${dst} ${dst}_bp
 cp -r ${rtdir}/${src} ${rtdir}/${dst}
-cd NNAVM
+cd ${dst}
 rm -rf .git README.md .gitignore
 cd ..
 cp -r ${dst}_bp/.git ${dst}/
