@@ -13,3 +13,4 @@ dataset/data/*
 experiments/eeavm
 experiments/config/*
 model/vis*
+*.sh
