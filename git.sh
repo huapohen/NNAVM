@@ -8,14 +8,14 @@ cd ${rtdir}
 mv ${dst} ${dst}_bp
 cp -r ${rtdir}/${src} ${rtdir}/${dst}
 cd ${dst}
-rm -rf .git README.md .gitignore
+rm -rf .git README.md
 cd ..
 cp -r ${dst}_bp/.git ${dst}/
 cp ${dst}_bp/README.md ${dst}/
-cp ${dst}_bp/.gitignore ${dst}/
 rm -rf ${dst}_bp
 
-for n in ${src} ${dst}
+# for n in ${src} ${dst}
+for n in ${dst}
 do
     cd ${rtdir}/${n}
     git add .
