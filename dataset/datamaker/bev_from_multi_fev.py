@@ -82,12 +82,6 @@ class DataMakerTorch(nn.Module):
         self.batch_size = bs = self._init_make_batch_divisible(bs, self.threads_num)
         self.drop_last_mismatch_batch = False
         self.mtp = MultiThreadsProcess()
-        self.src_num_mode_key_name = EasyDict(
-            multi='multiple_driving_images',
-            single='single_calibrate_image',
-        )
-        self.src_num_mode = self.src_num_mode_key_name.multi
-        # self.src_num_mode = self.src_num_mode_key_name.single
         self.src_img_mode_key_name = EasyDict(undist='undist', fev='fev')
         self.src_img_mode = self.src_img_mode_key_name.fev
         # self.src_img_mode = self.src_img_mode_key_name.undist
@@ -139,9 +133,7 @@ class DataMakerTorch(nn.Module):
 
         return
 
-    def _init_split_train_test_videos(self, src_num_mode, dataset_init_mode):
-        if src_num_mode != self.src_num_mode_key_name.multi:
-            return []
+    def _init_split_train_test_videos(self, dataset_init_mode):
         self.fub_dir_name = 'fev_undist_bev'
         self.source_videos_list = [
             '20221205135519',
@@ -183,23 +175,18 @@ class DataMakerTorch(nn.Module):
         self.src_img_path_record_txt = os.path.join(
             self.dataset_sv_dir, self.fub_dir_name, self.file_record_txt_name
         )
-        if self.src_num_mode == self.src_num_mode_key_name.multi:
-            cinl = cam_img_name_list
-            asm = assign_sample_num
-            assert len(cinl) > batch_size
-            if self.assign_sample_mode == 'random' and asm > 0:
-                cinl = random.shuffle(cinl)
-            elif self.assign_sample_mode == 'sequence':
-                cinl = sorted(cinl)
-            asm = len(cinl) if min(asm, len(cinl)) <= 0 else asm
-            self.assign_sample_num = asm = max(asm, batch_size)
-            self.cam_img_name_list = cinl[:asm]
-            num_img_per_camera = len(self.cam_img_name_list)
-            os.path.join(self.gt_bev_dir, 'generate')
-        else:
-            num_img_per_camera = 1
-            self.single_fev_dir = os.path.join(self.code_data_dir, 'fev')
-            self.single_undist_dir = os.path.join(self.code_data_dir, 'undist')
+        cinl = cam_img_name_list
+        asm = assign_sample_num
+        assert len(cinl) > batch_size
+        if self.assign_sample_mode == 'random' and asm > 0:
+            cinl = random.shuffle(cinl)
+        elif self.assign_sample_mode == 'sequence':
+            cinl = sorted(cinl)
+        asm = len(cinl) if min(asm, len(cinl)) <= 0 else asm
+        self.assign_sample_num = asm = max(asm, batch_size)
+        self.cam_img_name_list = cinl[:asm]
+        num_img_per_camera = len(self.cam_img_name_list)
+        os.path.join(self.gt_bev_dir, 'generate')
         return num_img_per_camera
 
     def _init_get_perturbed_points_info(self, dataset_init_mode):
@@ -261,7 +248,6 @@ class DataMakerTorch(nn.Module):
         prt_str = (
             f' \n'
             + f' camera_list: {self.camera_fblr} \n'
-            + f' src_num_mode: {self.src_num_mode} \n'
             + f' num_img_per_camera: {num_img_per_camera} \n'
             + f' batch_size: {self.batch_size} \n'
             + f' iteration: {iteration} \n'
@@ -308,18 +294,15 @@ class DataMakerTorch(nn.Module):
                 sys.exit()
         self.dataset_init_mode = mode
         # source images info
-        snm = self.src_num_mode
-        self.cam_img_name_list = cinl = self._init_split_train_test_videos(snm, mode)
+        self.cam_img_name_list = cinl = self._init_split_train_test_videos(mode)
         asn, bs = self.assign_sample_num, self.batch_size
         self.num_img_per_camera = nips = self._init_src_paths_warp_to_bev(asn, bs, cinl)
         self.batch_size_list, self.iteration = self._init_batch_and_iteration(bs, nips)
         # perturbed points info
         self._init_get_perturbed_points_info(mode)
 
-    def get_src_images(self, idx=None, src_num_mode=None, align_fblr=None):
+    def get_src_images(self, idx=None, align_fblr=None):
 
-        if src_num_mode is None:
-            src_num_mode = self.src_num_mode
         if align_fblr is None:
             align_fblr = self.align_fblr
         src_fblr = None
@@ -338,68 +321,65 @@ class DataMakerTorch(nn.Module):
             return img, name
 
         if align_fblr:
-            if src_num_mode == self.src_num_mode_key_name.single:
-                src_fblr = self.read_image_fblr()
-            elif src_num_mode == self.src_num_mode_key_name.multi:
-                src_fblr, nam_fblr = {}, {}
-                for camera in self.camera_fblr:
-                    src_fblr[camera] = []
-                    nam_fblr[camera] = []
-                for camera in self.camera_fblr:
-                    if idx is not None:
-                        cam_dir = os.path.join(self.src_img_dir, camera)
-                        name_list = self.cam_img_name_list[
-                            idx * self.batch_size : (idx + 1) * self.batch_size
-                        ]
-                        file_name_list = [
-                            e.replace(self.any_camera, camera) for e in name_list
-                        ]
-                        # multiprocessing
-                        threads_num = self.threads_num
-                        imgs_num = len(file_name_list)
-                        if imgs_num < threads_num:
-                            loop_num = 1
-                            threads_num = max(1, imgs_num)
-                        else:
-                            assert imgs_num % threads_num == 0
-                            loop_num = int(imgs_num / threads_num)
-                        # pipeline
-                        for i in range(loop_num):
-                            threads = []
-                            for j in range(threads_num):
-                                # preprocess
-                                name = file_name_list[i * threads_num + j]
-                                file_path = os.path.join(cam_dir, name)
-                                args = (file_path, name)
-                                # input
-                                thr = ThreadsOP(_read_image_kernel, args)
-                                threads.append(thr)
-                            # process
-                            for thr in threads:
-                                thr.start()
-                            for thr in threads:
-                                thr.join()
-                            for thr in threads:
-                                # postprocess
-                                img, name = thr.get_result()
-                                # output
-                                src_fblr[camera].append(img)
-                                nam_fblr[camera].append(name)
+            src_fblr, nam_fblr = {}, {}
+            for camera in self.camera_fblr:
+                src_fblr[camera] = []
+                nam_fblr[camera] = []
+            for camera in self.camera_fblr:
+                if idx is not None:
+                    cam_dir = os.path.join(self.src_img_dir, camera)
+                    name_list = self.cam_img_name_list[
+                        idx * self.batch_size : (idx + 1) * self.batch_size
+                    ]
+                    file_name_list = [
+                        e.replace(self.any_camera, camera) for e in name_list
+                    ]
+                    # multiprocessing
+                    threads_num = self.threads_num
+                    imgs_num = len(file_name_list)
+                    if imgs_num < threads_num:
+                        loop_num = 1
+                        threads_num = max(1, imgs_num)
                     else:
-                        # read all images in one batch at once
-                        cam_dir = os.path.join(self.src_img_dir, camera)
-                        file_name_list = os.listdir(cam_dir)
-                        if len(file_name_list) > 64:
-                            raise Exception("Too many images to feed into list")
-                        for name in file_name_list:
+                        assert imgs_num % threads_num == 0
+                        loop_num = int(imgs_num / threads_num)
+                    # pipeline
+                    for i in range(loop_num):
+                        threads = []
+                        for j in range(threads_num):
+                            # preprocess
+                            name = file_name_list[i * threads_num + j]
                             file_path = os.path.join(cam_dir, name)
-                            img, _ = _read_image_kernel(file_path, name)
+                            args = (file_path, name)
+                            # input
+                            thr = ThreadsOP(_read_image_kernel, args)
+                            threads.append(thr)
+                        # process
+                        for thr in threads:
+                            thr.start()
+                        for thr in threads:
+                            thr.join()
+                        for thr in threads:
+                            # postprocess
+                            img, name = thr.get_result()
+                            # output
                             src_fblr[camera].append(img)
                             nam_fblr[camera].append(name)
-                    img_batch = torch.stack(src_fblr[camera], dim=0)
-                    if self.enable_cuda:
-                        img_batch = img_batch.cuda()
-                    src_fblr[camera] = img_batch
+                else:
+                    # read all images in one batch at once
+                    cam_dir = os.path.join(self.src_img_dir, camera)
+                    file_name_list = os.listdir(cam_dir)
+                    if len(file_name_list) > 64:
+                        raise Exception("Too many images to feed into list")
+                    for name in file_name_list:
+                        file_path = os.path.join(cam_dir, name)
+                        img, _ = _read_image_kernel(file_path, name)
+                        src_fblr[camera].append(img)
+                        nam_fblr[camera].append(name)
+                img_batch = torch.stack(src_fblr[camera], dim=0)
+                if self.enable_cuda:
+                    img_batch = img_batch.cuda()
+                src_fblr[camera] = img_batch
             else:
                 raise ValueError
         else:
@@ -499,39 +479,7 @@ class DataMakerTorch(nn.Module):
             img_fblr[camera] = img
         return img_fblr
 
-    def warp_perturbed_image_single_src(
-        self, pts_perturb=None, src_fblr=None, name_fblr=None
-    ):
-        pt_undist_fblr = self.pt_src_fblr
-        if pts_perturb is None:
-            with open(self.perturb_pts_path, 'r') as f:
-                pts_perturb = json.load(f)
-        kn_ = self.key_name_pts_perturb
-        if src_fblr is None:
-            src_fblr = self.read_image_fblr()
-        for camera in self.camera_fblr:
-            save_dir = os.path.join(self.generate_dir, camera)
-            os.makedirs(save_dir, exist_ok=True)
-            for i in range(self.delta_num, self.delta_num + self.num_generated_points):
-                # perturbed points on bev
-                idx = f'{i:04}'  # fixed index format for generating perturbed points
-                pt_perturbed = pts_perturb[camera][kn_.perturbed_points_list][idx]
-                pt_perturbed = torch.Tensor(pt_perturbed).reshape(1, -1, 2)
-                if self.enable_cuda:
-                    pt_perturbed = pt_perturbed.cuda()
-                pt_undist = pt_undist_fblr[camera]
-                H = self.homo_torch_op(pt_undist, pt_perturbed)[0]
-                H_inv = torch.inverse(H).unsqueeze(0)
-                src = src_fblr[camera]
-                dst = self.warp_torch_op[camera](src, H_inv, mode='by_homo')
-                dst = dst.detach().cpu()
-                dst = dst.squeeze(0).numpy().transpose((1, 2, 0))
-                dst = cv2.cvtColor(dst, cv2.COLOR_RGB2BGR)
-                sv_path = os.path.join(save_dir, idx)
-                cv2.imwrite(sv_path, dst)
-        return
-
-    def warp_perturbed_image_multi_src(self, pts_perturb, src_fblr, name_fblr):
+    def warp_perturbed_image(self, pts_perturb, src_fblr, name_fblr):
         pt_undist_fblr = self.pt_src_fblr
         _kn1 = self.key_name_pts_perturb
         _kn2 = self.src_img_mode_key_name
@@ -591,16 +539,6 @@ class DataMakerTorch(nn.Module):
                 )
         return
 
-    def warp_perturbed_image(self, pts_perturb=None, src_fblr=None, name_fblr=None):
-        warp_params = (pts_perturb, src_fblr, name_fblr)
-        if self.src_num_mode == self.src_num_mode_key_name.single:
-            self.warp_perturbed_image_single_src(*warp_params)
-        elif self.src_num_mode == self.src_num_mode_key_name.multi:
-            self.warp_perturbed_image_multi_src(*warp_params)
-        else:
-            raise ValueError
-        return
-
     def shutil_copy(self):
         set_dir = self.dataset_mode_dir
         code_data_dir = self.code_data_dir
@@ -613,28 +551,20 @@ class DataMakerTorch(nn.Module):
             os.path.join(code_data_dir, f'{kn_.homo}.json'),
             os.path.join(set_dir, f'{kn_.homo}.json'),
         )
-        if self.src_num_mode == self.src_num_mode_key_name.single:
-            for name in ['bev', 'undist', 'fev']:
-                shutil.copytree(
-                    os.path.join(code_data_dir, name), os.path.join(set_dir, name)
-                )
-        elif self.src_num_mode == self.src_num_mode_key_name.multi:
-            if (
-                self.dataset_init_mode in ['train', 'test']
-                and self.perturbed_image_type == 'bev'
-            ):
-                # fev or undist
-                dst_img_dir = os.path.join(set_dir, self.src_img_mode)
-                shutil.copytree(self.src_img_dir, dst_img_dir)
-                # bev
-                src_bev_dir = os.path.join(self.dataset_dir, 'gt_bev', 'generate')
-                dst_bev_dir = os.path.join(set_dir, 'bev')
-                shutil.copytree(src_bev_dir, dst_bev_dir)
-            else:
-                # TODO
-                pass
+        if (
+            self.dataset_init_mode in ['train', 'test']
+            and self.perturbed_image_type == 'bev'
+        ):
+            # fev or undist
+            dst_img_dir = os.path.join(set_dir, self.src_img_mode)
+            shutil.copytree(self.src_img_dir, dst_img_dir)
+            # bev
+            src_bev_dir = os.path.join(self.dataset_dir, 'gt_bev', 'generate')
+            dst_bev_dir = os.path.join(set_dir, 'bev')
+            shutil.copytree(src_bev_dir, dst_bev_dir)
         else:
-            raise ValueError
+            # TODO
+            pass
 
         return
 

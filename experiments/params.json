@@ -7,7 +7,7 @@
     "data_dir": "/home/data/lwb/data/dybev/",
     "train_data_ratio": [
         [
-            "v3",
+            "v4",
             1
         ]
     ],

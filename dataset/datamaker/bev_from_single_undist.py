@@ -165,8 +165,8 @@ class DataMakerTorch(nn.Module):
                 dst = cv2.cvtColor(dst, cv2.COLOR_RGB2BGR)
                 save_dir = f"{self.generate_dir}/{camera}"
                 os.makedirs(save_dir, exist_ok=True)
-                path = f"{save_dir}/{idx}.jpg"
-                cv2.imwrite(path, dst)
+                sv_path = os.path.join(save_dir, idx)
+                cv2.imwrite(sv_path, dst)
         return
 
     def shutil_copy(self):
@@ -332,8 +332,12 @@ class DataMakerCV2:
         return angle_distorted
 
     def get_remap_table(self, mode="fev2bev", is_save=False):
-        assert mode in ["fev2bev", "fev2undist", "undist2bev", 
-                        'fev2undist2virtual'], AssertionError
+        assert mode in [
+            "fev2bev",
+            "fev2undist",
+            "undist2bev",
+            'fev2undist2virtual',
+        ], AssertionError
 
         undist_center_w = int(self.undist_w / 2)
         undist_center_h = int(self.undist_h / 2)
@@ -351,7 +355,7 @@ class DataMakerCV2:
                 col = self.undist_w  # 1984
                 row = self.undist_h  # 1488
                 if mode == 'fev2undist2virtual':
-                    # homo_u2v = self.get_homo_undist2virtual(is_save)
+                    # todo
                     homo_u2v = np.eyes(3)
             for i in range(row):
                 row_x, row_y = [], []
@@ -407,35 +411,6 @@ class DataMakerCV2:
         H, _ = cv2.findHomography(src, dst)
 
         return H, shift
-
-    def get_homo_undist2virtual(self, is_save):
-        
-        def _slove_homo_from_Rt(R, t, d, n, intrinsic):
-            intrinsic_inv = np.linalg.inv(intrinsic)
-            n_ = n.reshape(3, 1)
-            H = intrinsic * (R + t / d * n_) * intrinsic_inv
-            return H
-        
-        def _calc_rotation(theta):
-            R = np.array([[1, 0, 0], 
-                          [0, math.cos(theta), -math.sin(theta)], 
-                          [0, math.sin(theta), math.cos(theta)]]
-            )
-            return R
-        
-        random_pose_pitch = 5
-        random_pose_roll = 5
-        theta_pitch = random_pose_pitch / 180 * math.pi
-        theta_roll = random_pose_roll / 180 * math.pi
-        R_pitch = _calc_rotation(theta_pitch)
-        R_roll = _calc_rotation(theta_roll)
-        t = np.zeros([3, 1])
-        n = np.array([0, 0, 1])
-        n *= R_pitch
-        d = None
-        H_pitch = _slove_homo_from_Rt(R_pitch, t, d, n, intrinsic=None)
-        
-        return 
 
     def get_homo_undist2bev(self, shift_func=None, is_save=False):
         pts_path = f"{self.base_path}/detected_points.json"
