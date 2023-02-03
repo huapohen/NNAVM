@@ -469,24 +469,3 @@ class Focus(nn.Module):
             dim=1,
         )
         return self.conv(x)
-
-
-def get_grid(batch_size, h, w, start=0):
-    # 这里x是图像的列
-    if torch.cuda.is_available():
-        xx = torch.arange(0, w).cuda()
-        yy = torch.arange(0, h).cuda()
-    else:
-        xx = torch.arange(0, w)
-        yy = torch.arange(0, h)
-    xx = xx.view(1, -1).repeat(h, 1)
-    yy = yy.view(-1, 1).repeat(1, w)
-    xx = xx.view(1, 1, h, w).repeat(batch_size, 1, 1, 1)
-    yy = yy.view(1, 1, h, w).repeat(batch_size, 1, 1, 1)
-    ones = (
-        torch.ones_like(xx).cuda() if torch.cuda.is_available() else torch.ones_like(xx)
-    )
-    grid = torch.cat((xx, yy, ones), 1).float()
-
-    grid[:, :2, :, :] = grid[:, :2, :, :] + start  # add the coordinate of left top
-    return grid

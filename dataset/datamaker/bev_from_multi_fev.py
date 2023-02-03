@@ -19,8 +19,8 @@ from easydict import EasyDict
 from itertools import permutations
 
 from .calibrate_params import CalibrateParameter
+from .torch_class_op import RemapTableTorchOP, HomoTorchOP, WarpTorchOP
 from util.multi_threads_op import ThreadsOP, MultiThreadsProcess
-from util.torch_class_op import RemapTableTorchOP, HomoTorchOP, WarpTorchOP
 
 # at project root directory:
 #   python -m dataset.datamaker.bev_from_multi_fev
@@ -575,7 +575,6 @@ class DataMakerTorch(nn.Module):
                     H_u2b = self.homo_torch_op(pt_undist * 2, pt_perturbed)
                     H_b2u = torch.inverse(H_u2b)
                     grids = self.remap_table_torch_op(H_b2u, camera, mode='f2b')
-                    grids = grids.permute(0, 3, 1, 2).contiguous()
                     grids = grids.repeat(len(names), 1, 1, 1)
                     dst = self.warp_torch_op[camera](src_cam, None, grids, 'by_grid')
                 dst = dst.transpose(1, 2).transpose(2, 3)  # bchw -> bhwc

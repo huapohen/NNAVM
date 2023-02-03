@@ -14,6 +14,7 @@ def train_config(cfg):
     cfg.num_workers = 16
     cfg.num_epochs = 12
     cfg.train_batch_size = 64
+    # cfg.train_data_ratio = [["v3", 1]]
     cfg.train_data_ratio = [["v4", 1]]
     cfg.src_img_mode = 'fev'
     # cfg.src_img_mode = 'undist'

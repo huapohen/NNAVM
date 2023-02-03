@@ -50,6 +50,17 @@ def dlt_homo(src_pt, dst_pt, method="Axb"):
     return H
 
 
+def get_meshgrid(h, w, device):
+    grid_x, grid_y = torch.meshgrid(  # grid_i, grid_j
+        torch.arange(w, device=device),  # h
+        torch.arange(h, device=device),  # w
+        indexing='xy',  # 'ij'
+    )
+    grid_v = grid_x.new_ones(*grid_x.shape)
+    grids = torch.stack([grid_x, grid_y, grid_v], dim=2)
+    return grids
+
+
 def get_grid(batch_size, h, w, start=0, enable_cuda=True):
     """
     this grid same as twice for loop
@@ -198,8 +209,47 @@ def get_flow_vgrid(H_mat_mul, patch_indices, patch_size_h, patch_size_w, divide=
     return flow, vgrid
 
 
+def undist_grids_to_fev(self, grids, is_out_bchw=True):
+    # input grids shape: b h w c
+    dv = grids.device
+    ele1 = torch.tensor([self.undist_w / 2, self.undist_h / 2], device=dv)
+    ele2 = torch.tensor([self.center_w, self.center_h], device=dv)
+    ele3 = torch.tensor([self.intrinsic[0][0], self.intrinsic[1][1]], device=dv)
+    undist_center, dist_center, f = [
+        ele.reshape(1, 1, 1, 2) for ele in [ele1, ele2, ele3]
+    ]
+    grids = grids - undist_center
+    r_undist = torch.linalg.norm(grids.div(f), dim=-1)
+    angle_undistorted = torch.atan(r_undist)
+    angle_undistorted_p2 = angle_undistorted * angle_undistorted
+    angle_undistorted_p3 = angle_undistorted_p2 * angle_undistorted
+    angle_undistorted_p5 = angle_undistorted_p2 * angle_undistorted_p3
+    angle_undistorted_p7 = angle_undistorted_p2 * angle_undistorted_p5
+    angle_undistorted_p9 = angle_undistorted_p2 * angle_undistorted_p7
+    coefs = []
+    for i in range(4):
+        coefs.append(torch.tensor(self.distort[f'Opencv_k{i}'], device=dv))
+    r_distort = (
+        angle_undistorted
+        + coefs[0] * angle_undistorted_p3
+        + coefs[1] * angle_undistorted_p5
+        + coefs[2] * angle_undistorted_p7
+        + coefs[3] * angle_undistorted_p9
+    )
+    min_value = torch.tensor(1e-6, device=dv)
+    scale = torch.div(r_distort, r_undist.clamp(min_value))
+    scale = scale.unsqueeze(-1)
+    grids = grids * scale + dist_center
+
+    if is_out_bchw:
+        grids = grids.permute(0, 3, 1, 2).contiguous()
+
+    return grids
+
+
 def warp_image(I, vgrid, train=True, enable_cuda=True):
     """
+    torch.nn.functional.grid_sample
     I: Img, shape: batch_size, 1, full_h, full_w
     vgrid: vgrid, target->source, shape: batch_size, 2, patch_h, patch_w
     outsize: (patch_h, patch_w)
@@ -223,14 +273,17 @@ def warp_image(I, vgrid, train=True, enable_cuda=True):
     return output
 
 
-def warp_image_u2b(params, batch_size, homo, src):
+def warp_image_to_bev(params, batch_size, homo, src):
     dst = []
     for i, cam in enumerate(params.camera_list):
         w, h = params.wh_bev_fblr[cam]
         grid = get_grid(batch_size, h, w, 0, params.cuda)
         h_this = homo[i * batch_size : (i + 1) * batch_size]
         flow, vgrid = get_flow_vgrid(h_this, grid, h, w, 1)
-        hgrid = vgrid + flow
-        dst_this = warp_image(src[i], hgrid)
-        dst.append(dst_this)
+        grids = vgrid + flow
+        if params.src_img_mode == 'fev':
+            grids = grids.permute(0, 2, 3, 1).contiguous()
+            grids = undist_grids_to_fev(params.calib_param, grids)
+        dst_cam = warp_image(src[i], grids)
+        dst.append(dst_cam)
     return dst

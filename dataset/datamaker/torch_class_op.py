@@ -15,8 +15,8 @@ class RemapTableTorchOP(object):
     input  shape:
         H_bev2undist: camera_front bhw=(b,336,1078) b=1
     output shape:
-        if u2b: bhwc=(b, 2976, 3968, 2)
-        if f2b: bhwc=(b, bev_h, bev_w, 2)
+        if u2b: bchw=(b, 2, 2976, 3968)
+        if f2b: bchw=(b, 2, bev_h, bev_w)
     '''
 
     def __init__(self, calibrate_parameter, is_gpu=False):
@@ -28,8 +28,9 @@ class RemapTableTorchOP(object):
         self.remap_table_undist2bev = self.get_undist2bev_remap_table()
         self.grids_b2u_fblr = self._init_bev2undist_grids()
 
-    def undist_grids_to_fev(self, grids):
-        dv = self.device
+    def undist_grids_to_fev(self, grids, is_out_bchw=True):
+        # input grids shape: b h w c
+        dv = grids.device
         ele1 = torch.tensor([self.undist_w / 2, self.undist_h / 2], device=dv)
         ele2 = torch.tensor([self.center_w, self.center_h], device=dv)
         ele3 = torch.tensor([self.intrinsic[0][0], self.intrinsic[1][1]], device=dv)
@@ -37,8 +38,7 @@ class RemapTableTorchOP(object):
             ele.reshape(1, 1, 1, 2) for ele in [ele1, ele2, ele3]
         ]
         grids = grids - undist_center
-        grids_norm = grids / f
-        r_undist = torch.linalg.norm(grids_norm, dim=-1)
+        r_undist = torch.linalg.norm(grids.div(f), dim=-1)
         angle_undistorted = torch.atan(r_undist)
         angle_undistorted_p2 = angle_undistorted * angle_undistorted
         angle_undistorted_p3 = angle_undistorted_p2 * angle_undistorted
@@ -59,6 +59,9 @@ class RemapTableTorchOP(object):
         scale = torch.div(r_distort, r_undist.clamp(min_value))
         scale = scale.unsqueeze(-1)
         grids = grids * scale + dist_center
+
+        if is_out_bchw:
+            grids = grids.permute(0, 3, 1, 2).contiguous()
 
         return grids
 
@@ -100,6 +103,10 @@ class RemapTableTorchOP(object):
         grids = grids.transpose(2, 1).reshape((-1, h, w, 3))
         grids = grids / grids[:, :, :, 2:]
         grids = grids[:, :, :, 0:2]
+
+        # grids = torch_func_op.get_grid(H_bev2undist.shape[0], h, w, 0, self.is_gpu)
+        # flow, vgrid = torch_func_op.get_flow_vgrid(H_bev2undist, grids, h, w, 1)
+        # grids = vgrid + flow
 
         grids = self.undist_grids_to_fev(grids)
 
@@ -374,7 +381,6 @@ def warp_image_f2b(params, bs, homo, fev_fblr):
     for i, cam in enumerate(params.camera_list):
         h_b2u = homo[i * bs : (i + 1) * bs]
         grids = remap_table_torch_op(h_b2u, cam, mode='f2b')
-        grids = grids.permute(0, 3, 1, 2).contiguous()
         warp_torch_op = WarpTorchOP(bs, *params.wh_bev_fblr[cam], params.cuda, 0)
         dst_cam = warp_torch_op(fev_fblr[i], None, grids, 'by_grid')
         dst.append(dst_cam)
@@ -393,7 +399,6 @@ if __name__ == '__main__':
         H_u2b = self.homo_torch_op(pt_undist * 2, pt_perturbed)
         H_b2u = torch.inverse(H_u2b)
         grids = self.remap_table_torch_op(H_b2u, camera, mode='f2b')
-        grids = grids.permute(0, 3, 1, 2).contiguous()
         grids = grids.repeat(len(names), 1, 1, 1)
         dst = self.warp_torch_op[camera](src_cam, None, grids, 'by_grid')
     '''

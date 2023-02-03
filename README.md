@@ -1,43 +1,6 @@
-# EEAVM
-
-finishied:
-1.  implement Homography and Warp use pytorch
-2.  undistorted image to bird-eye vision image
-3.  generate fake data, which used for training End-to-End AVM
-
-todo:  
-  4.  fish-eye vision image to undistorted image  
-  5.  pipeline:  
-    5.1  model code & loss func & evaluate criteria / benchmark  
-    5.2  training  
-    
-以上2022年  
-以下2023年  
-  
-此版本为有监督版本，用做数据集生成的点的offset作为标签，用网络去回归这个offset  
-网络改为分类网络，基于dw_resnet，回归4个点（8个channel），输入一张扰动后的bev图，吐出8channels  
-损失用mse_loss（l2 loss）  
-可以收敛。  
-写成可配置形式，在json里，选配哪几个摄像头的数据集参与训练（从1到4个）  
-
-python train.py 启动训练  
-python evaluate.py 启动测试  
-数据集制作用dataset/data/data_maker.py这个文件，生成目录在当前路径下（转移到其他地方需要手动）  
-
-此数据集版本，为在bev鸟瞰上扰动，bev_origin -> bev_perturbed，  
-然而扰动的图是通过undist->bev_ori->bev_pert  即用src点为去畸变，dst点为扰动，通过torch版本的homo和warp生成 。后续需换成 fev->undist->bev_pert（用鱼眼就会消除黑边）  
-
-评价指标为 homing_point_ratio 即点归位率hpr，有监督情况下，用points_perturbed - 网络输出的offset，这个为预测点。和point_origin（bev_origin的）做欧式距离pixel_distance。  点归位率计算方式为：pixel_distance 除以 造数据集时最大pixel偏移，然后取min(hpr, 1)，超出都截断。然后1 - min(hpr, 1)，这样，越接近1越好，越接近0，越不好。  
-
-另外还有个指标为pixel_distance，看平均像素差异有多大。
-
-目前是 单摄像头+单图 造数据集，做验证。多摄像头+单图 验证只需改下 camera_list参数为['front', 'back', 'left', 'right']，然后需要单摄像头+多图，和多摄像头+多图。
-有监督才算基本的做完。 TODO
-
-已更新，无监督版本 20230106  
-
-****
+# DynamicBEV
  
+
 
  ## Train
 启动训练，有三种方式：  
@@ -75,17 +38,12 @@ python evaluate.py 启动测试
   (1). v1目录，是用去畸变图上做扰动造的数据集  
   (2). v2目录，是用鸟瞰图上做扰动造的数据集  
   但v1和v2都是每个摄像头只用一张输入图造的，从v3开始是多张输入图来造  
-  造数据脚本dataset/data_maker.py 
-  (3). v3   
+  造数据脚本dataset/data_maker.py  
+  (3). v3  
 
 ## TensorboardX  
 `tensorboard --logdir_spec exp_1:add_1,exp_2:add_2 --bind_all --port xxxx`  
 `tensorboard --log_dir=tf_log_path`  
-
-
-20230109
-
-****
 
 
 ## Homography
@@ -119,9 +77,3 @@ For net, `python model/net_unit_test.py`, the result is under the dir of 'model'
 *** result(1) != result(2) 
 2. `inference:  undist -> bev origin -> bev pred`  
 data['homo_u2b'] = data['H_bev_pert_pred_to_origin'] @ data['H_undist_to_bev_origin']
-
-
-20230111
-
-****
-
