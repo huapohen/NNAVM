@@ -8,10 +8,11 @@ cd ${rtdir}
 mv ${dst} ${dst}_bp
 cp -r ${rtdir}/${src} ${rtdir}/${dst}
 cd NNAVM
-rm -rf .git README.md
+rm -rf .git README.md .gitignore
 cd ..
 cp -r ${dst}_bp/.git ${dst}/
 cp ${dst}_bp/README.md ${dst}/
+cp ${dst}_bp/.gitignore ${dst}/
 rm -rf ${dst}_bp
 
 for n in ${src} ${dst}
