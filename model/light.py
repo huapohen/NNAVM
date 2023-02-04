@@ -49,7 +49,8 @@ class DepthwiseSeparable(nn.Module):
         super().__init__()
         self.dwconv = ConvBN(inc, inc, kernel, stride, inc)
         self.pwconv = ConvBN(inc, ouc, 1)
-        self.act = nn.ReLU(True)
+        self.act = nn.ReLU6(False)
+        self.scale = 5
         self.residual = residual
         self.need_act = need_act
 
@@ -57,7 +58,7 @@ class DepthwiseSeparable(nn.Module):
         if self.residual == 1:
             shortcut = x
         x = self.dwconv(x)
-        x = self.act(x)
+        x = self.act(x / self.scale) * self.scale
         x = self.pwconv(x)
         if self.residual:
             x += shortcut

@@ -9,11 +9,11 @@ def train_config(cfg):
     # cfg.camera_list = ["front"]
     # cfg.camera_list = ["front", 'back']
     cfg.camera_list = ["front", 'back', 'left', 'right']
-    cfg.exp_id = 9
+    cfg.exp_id = 10
     cfg.gpu_used = '2_1'
     cfg.num_workers = 16
     cfg.num_epochs = 12
-    cfg.train_batch_size = 16
+    cfg.train_batch_size = 8
     cfg.src_img_mode = 'fev'
     cfg.train_data_ratio = [["v4", 1]]
     # cfg.src_img_mode = 'undist'
@@ -34,7 +34,9 @@ def train_config(cfg):
     # cfg.is_eval_first = True
     cfg.is_eval_first = False
     cfg.dataset_type = "basic"  # train + test
-    cfg.eval_batch_size = 32
+    bs = int(cfg.train_batch_size / len(cfg.camera_list))
+    cfg.train_batch_size = bs
+    cfg.eval_batch_size = bs
     cfg.test_data_ratio = cfg.train_data_ratio
     cfg.is_exp_rm_protect = False
     cfg.is_continue_train = False
@@ -45,27 +47,17 @@ def train_config(cfg):
 
 def test_config(cfg, args=None):
 
-    cfg.exp_id = 2
+    cfg.exp_id = 10
     cfg.gpu_used = '6'
-    cfg.eval_batch_size = 32
-    cfg.test_data_ratio = [["v3", 1]]
-    cfg.camera_list = ["front"]
-    # cfg.model_train_type = "supervised"
-    cfg.model_train_type = "unsupervised"
+    cfg.eval_batch_size = 2
+    cfg.is_exp_rm_protect = False
     cfg.dataset_type = "test"
-    cfg.eval_visualize_save = True
     # cfg.eval_visualize_save = False
     # cfg.restore_file = 'eeavm_test_model_best.pth'
     cfg.restore_file = "eeavm_model_latest.pth"
 
     if 'exp_id' in vars(args):
         cfg.exp_id = args.exp_id
-
-    if cfg.model_train_type == 'supervised':
-        cfg.major_metric = 'homing_point_ratio'
-        cfg.metric_mode = "ascend"
-    elif cfg.model_train_type == 'unsupervised':
-        cfg.major_metric = "total_loss"
 
     return cfg
 

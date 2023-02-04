@@ -26,7 +26,7 @@ from common.manager import Manager
 from loss.losses import compute_losses
 from loss.benchmark import benchmark_indicator
 from util.preprocess import to_cuda
-from util.postprocess import visulize_results
+from util.visualize import visulize_results
 from parameters import get_config, dictToObj
 
 warnings.filterwarnings("ignore")
@@ -65,6 +65,8 @@ def evaluate(manager):
     with torch.no_grad():
 
         iter_max = len(manager.dataloaders["test"])
+        assert iter_max > 0, "\t\t\t\t empty input"
+        params.iter_max = iter_max
 
         with tqdm(total=iter_max) as t:
             for idx, data in enumerate(manager.dataloaders["test"]):

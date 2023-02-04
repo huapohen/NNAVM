@@ -54,6 +54,8 @@
         1024
     ],
     "act": "relu",
+    "is_output_activation": true,
+    "output_activation": "tanh",
     "save_every_epoch": false,
     "dataset_type": "basic",
     "net_type": "eeavm",
@@ -67,7 +69,7 @@
     "learning_rate_new": false,
     "gamma": 0.995,
     "step_size": 1,
-    "train_batch_size": 16,
+    "train_batch_size": 64,
     "eval_batch_size": 64,
     "num_epochs": 36,
     "eval_freq": 1,
@@ -99,6 +101,7 @@
         7
     ],
     "max_shift_pixels": 15,
+    "hardtanh_minmaxvalue": 15,
     "camera_list": [
         "front",
         "back",
@@ -129,8 +132,8 @@
     "model_train_type": "unsupervised",
     "visualize_mode": "evaluate",
     "train_eval_inference": "train",
-    "nn_output_do_tanh": true,
     "train_vis_iter_frequence": 20,
+    "eval_vis_iter_frequence": 20,
     "train_visualize_save": true,
     "eval_visualize_save": true,
     "second_stage_image_supervised": false,

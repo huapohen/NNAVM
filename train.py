@@ -26,7 +26,7 @@ from common.manager import Manager
 from evaluate import evaluate
 from loss.losses import compute_losses
 from util.preprocess import to_cuda
-from util.postprocess import visulize_results
+from util.visualize import visulize_results
 from parameters import get_config, dictToObj
 
 warnings.filterwarnings("ignore")

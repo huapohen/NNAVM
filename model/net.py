@@ -1,4 +1,5 @@
 from model.warp_head import warp_head
+from util.postprocess import backbone_output_activation
 
 
 def fetch_net(params):
@@ -15,10 +16,7 @@ def fetch_net(params):
 
 def second_stage(params, data):
 
-    if params.nn_output_do_tanh:
-        data['offset_pred'] = data['offset_pred'].tanh() * params.max_shift_pixels
-
-    # get bev
+    data = backbone_output_activation(params, data)
     data = warp_head(params, data)
 
     return data

@@ -3,7 +3,7 @@ import torch
 
 def calc_point_indicator(params, data, indicator):
     offset = data['offset']
-    output = data['offset_pred'].tanh() * params.max_shift_pixels
+    output = data['offset_pred']
     batch_size = int(data['image'].shape[0] / len(params.camera_list))
 
     m_pixel_err = []
