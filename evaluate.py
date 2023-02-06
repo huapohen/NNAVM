@@ -160,6 +160,7 @@ def run_all_exps(exp_id):
     # Get the logger
     logger = utils.set_logger(os.path.join(params.model_dir, "evaluate.log"))
 
+    logger.info(f"exp_id: {params.exp_id}")
     logger.info("Loading the train datasets from {}".format(params.data_dir))
 
     # Fetch dataloaders

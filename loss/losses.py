@@ -3,6 +3,19 @@ import torch.nn.functional as F
 from easydict import EasyDict as dic
 
 
+def verify_convergence(pd, gt):
+    '''
+    convergence:
+        closer small area > undist2bev > fev2bev
+        bigger is better
+    '''
+    h, w = gt.shape[2:]
+    y, x = int(h / 3), int(w / 3)
+    pd, gt = [ele[:, :, y:, x : 2 * x] for ele in (pd, gt)]
+    # pd, gt = [ele[:, :, :, x : 2 * x] for ele in (pd, gt)]
+    return pd, gt
+
+
 def loss_supervised(params, data):
     '''
     point or image
@@ -13,7 +26,7 @@ def loss_supervised(params, data):
     offset_pred = data[_kn.offset_pred]
     batch_size = int(data['image'].shape[0] / len(params.camera_list))
     losses = []
-    for i, cam in enumerate(params.camera_list):
+    for i, _ in enumerate(params.camera_list):
         pred = offset_pred[i * batch_size : (i + 1) * batch_size]
         gt = offset[i * batch_size : (i + 1) * batch_size]
         loss = F.mse_loss(pred, gt)
@@ -30,7 +43,7 @@ def loss_unsupervised(params, data):
     _kn1 = dic(params.photo_loss_mode_key_name)
     _kn2 = dic(params.loss_point_and_image_mode_key_name)
     losses = []
-    for i, cam in enumerate(params.camera_list):
+    for i, _ in enumerate(params.camera_list):
         if params.photo_loss_mode == _kn1.perturbed:
             pred = data[_kn2.bev_perturbed_pred][i]
             gt = data[_kn2.bev_perturbed][i]
@@ -39,6 +52,8 @@ def loss_unsupervised(params, data):
             gt = data[_kn2.bev_origin][i]
         else:
             raise
+        if params.is_mask_out_a_small_area:
+            pred, gt = verify_convergence(pred, gt)
         loss = F.l1_loss(pred, gt.float())
         losses.append(loss.unsqueeze(0))
     losses = torch.cat(losses).mean()

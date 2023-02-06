@@ -274,6 +274,7 @@ if __name__ == "__main__":
         optimizer, step_size=params.step_size, gamma=params.gamma
     )
 
+    logger.info(f"exp_id: {params.exp_id}")
     logger.info("Loading the train datasets from {}".format(params.data_dir))
 
     # fetch dataloaders
