@@ -6,14 +6,17 @@ from yacs.config import CfgNode as CN
 
 
 def train_config(cfg):
-    cfg.camera_list = ["front"]
+    # cfg.camera_list = ["front"]
+    # cfg.camera_list = ["back"]
+    # cfg.camera_list = ["left"]
+    cfg.camera_list = ["right"]
     # cfg.camera_list = ["front", 'back']
     # cfg.camera_list = ["front", 'back', 'left', 'right']
-    cfg.exp_id = 13
-    cfg.gpu_used = '5_4'
-    cfg.num_workers = 16
-    cfg.num_epochs = 12
-    cfg.train_batch_size = 64
+    cfg.exp_id = 15
+    cfg.gpu_used = '3'
+    cfg.num_workers = 8
+    cfg.num_epochs = 100
+    cfg.train_batch_size = 32
     cfg.src_img_mode, cfg.train_data_ratio = 'fev', [["v4", 1]]
     # cfg.src_img_mode, cfg.train_data_ratio = 'undist', [["v3", 1]]
     # cfg.is_unit_test_model = True
