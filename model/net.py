@@ -19,4 +19,14 @@ def second_stage(params, data):
     data = backbone_output_activation(params, data)
     data = warp_head(params, data)
 
+    if params.is_unit_test_model:
+        import sys
+        import model.unit_test as ut
+
+        ut.unit_test_first_stage_torch(data)
+        ut.unit_test_second_stage_cv2()
+        ut.unit_test_second_stage_torch(data)
+        ut.unit_test_warp_image_torch()
+        sys.exit()
+
     return data

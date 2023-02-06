@@ -9,7 +9,7 @@ def warp_head(params, data):
     params.calib_param = EasyDict(CalibrateParameter().__dict__)
 
     data['coords_bev_perturbed_pred'] = data["coords_bev_origin"] + data['offset_pred']
-    
+
     data['H_bev_pert_pred_to_origin'] = dlt_homo(
         data["coords_bev_perturbed_pred"], data['coords_bev_origin']
     )
@@ -57,6 +57,14 @@ def warp_head(params, data):
             data['homo_b2u'] = dlt_homo(
                 data['coords_bev_origin_pred'], data["coords_undist"]
             )
+
+        # for versus
+        data['homo_b2u_supervised'] = dlt_homo(
+            data['coords_bev_origin_pred'], data["coords_undist"]
+        )
+        data['bev_origin_pred_supervised'] = warp_image_to_bev(
+            params, bs, data['homo_b2u_supervised'], data[params.src_img_mode]
+        )
 
     elif params.train_eval_inference == 'inference':
         # Inference:

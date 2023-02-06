@@ -115,6 +115,14 @@
         "bev+undist"
     ],
     "input_image_mode_for_net": "bev",
+    "all_perturbed_image_mode": [
+        "fev",
+        "bev",
+        "undist",
+        "undist+bev",
+        "fev+undist+bev"
+    ],
+    "perturbed_image_mode": "bev",
     "dataloader_task_mode": [
         "offset",
         "coords",
@@ -180,5 +188,6 @@
         }
     },
     "is_align_fblr_resolution": true,
-    "is_exp_rm_protect": true
+    "is_exp_rm_protect": true,
+    "is_unit_test_model": false
 }

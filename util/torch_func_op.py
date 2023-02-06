@@ -318,7 +318,7 @@ def unit_test_warp_image():
     grids = vgrid + flow
     bev_u2b = warp_image(undist, grids)
     bev_u2b = bev_u2b.detach().cpu()[0].permute(1, 2, 0).numpy()
-    cv2.imwrite(f'dataset/data/test/bev_u2b.jpg', bev_u2b)
+    cv2.imwrite(f'model/vis/bev_u2b.jpg', bev_u2b)
     # ipdb.set_trace()
     fev = cv2.imread('dataset/data/fev/front.png')
     fev = torch.tensor(fev).permute(2, 0, 1).contiguous().unsqueeze(0).cuda()
@@ -329,7 +329,7 @@ def unit_test_warp_image():
     grids = undist_grids_to_fev(calib_param, grids)
     bev_f2b = warp_image(fev, grids)
     bev_f2b = bev_f2b.detach().cpu()[0].permute(1, 2, 0).numpy()
-    cv2.imwrite(f'dataset/data/test/bev_f2b.jpg', bev_f2b)
+    cv2.imwrite(f'model/vis/bev_f2b.jpg', bev_f2b)
     # ipdb.set_trace()
 
 

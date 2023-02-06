@@ -6,18 +6,17 @@ from yacs.config import CfgNode as CN
 
 
 def train_config(cfg):
-    # cfg.camera_list = ["front"]
+    cfg.camera_list = ["front"]
     # cfg.camera_list = ["front", 'back']
-    cfg.camera_list = ["front", 'back', 'left', 'right']
-    cfg.exp_id = 10
-    cfg.gpu_used = '2_1'
+    # cfg.camera_list = ["front", 'back', 'left', 'right']
+    cfg.exp_id = 11
+    cfg.gpu_used = '6_7'
     cfg.num_workers = 16
-    cfg.num_epochs = 12
-    cfg.train_batch_size = 8
-    cfg.src_img_mode = 'fev'
-    cfg.train_data_ratio = [["v4", 1]]
-    # cfg.src_img_mode = 'undist'
-    # cfg.train_data_ratio = [["v3", 1]]
+    cfg.num_epochs = 100
+    cfg.train_batch_size = 32
+    cfg.src_img_mode, cfg.train_data_ratio = 'fev', [["v4", 1]]
+    # cfg.src_img_mode, cfg.train_data_ratio = 'undist', [["v3", 1]]
+    cfg.is_unit_test_model = True
     cfg.src_num_mode = "multiple_driving_images"
     cfg.scale_undist = 0.5
     # cfg.model_train_type = "supervised"
@@ -26,6 +25,7 @@ def train_config(cfg):
     # cfg.bev_mask_mode = True
     cfg.train_visualize_save = True
     cfg.train_vis_iter_frequence = 20
+    cfg.eval_vis_iter_frequence = 1
     # cfg.major_metric = 'total_loss'
     cfg.major_metric = 'mean_pixel_err'
     cfg.metric_mode = 'descend'
