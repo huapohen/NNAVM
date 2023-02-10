@@ -125,3 +125,16 @@ data['homo_u2b'] = data['H_bev_pert_pred_to_origin'] @ data['H_undist_to_bev_ori
 
 ****
 
+fev2bev pipeline passed  
+
+20230206  
+
+****
+
+Transformer  
+AVM Stitch As VideoFrames  
+AVM Stitch&Frames As Multi-Cameras&VideoFrames  
+
+test: using semantic-seg to mask non-dominant areas, failed.  
+需要无监督屏蔽任意区域，或者利用所有区域(√)  
+Conclude: Requires unsupervised masking of any region, or utilization of all regions.'
