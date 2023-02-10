@@ -4,7 +4,7 @@ import thop
 import torch
 import torch.nn as nn
 
-__all__ = ['lightnet']
+__all__ = ['LightNet']
 
 NET_CONFIG = {  # k, inc, ouc, s, act, res
     "blocks2": [[3, 32, 64, 1, 0, 0]],  # 112
