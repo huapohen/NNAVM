@@ -165,7 +165,7 @@ if __name__ == "__main__":
 
     if args.params_path is not None and args.restore_file is None:
         # run train by DIY in designated diy_params.json
-        '''python train.py --params diy_param_json_path'''
+        '''python train.py --params_path diy_param_json_path'''
         params = utils.Params(args.params_path)
         exp_dir = os.path.join(params.exp_root, params.exp_name)
         params.model_dir = os.path.join(exp_dir, f"exp_{params.exp_id}")

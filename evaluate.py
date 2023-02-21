@@ -122,7 +122,7 @@ def run_all_exps(exp_id):
 
     if args.params_path is not None and args.restore_file is None:
         # run test by DIY in designated diy_params.json
-        '''python evaluate.py --params diy_param_json_path'''
+        '''python evaluate.py --params_path diy_param_json_path'''
         params = utils.Params(args.params_path)
         exp_dir = os.path.join(params.exp_root, params.exp_name)
         params.model_dir = os.path.join(exp_dir, f"exp_{params.exp_id}")
