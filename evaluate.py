@@ -64,12 +64,12 @@ def evaluate(manager):
 
     with torch.no_grad():
 
-        iter_max = len(manager.dataloaders["test"])
+        iter_max = len(manager.dataloaders[params.dataset_type])
         assert iter_max > 0, "\t\t\t\t empty input"
         params.iter_max = iter_max
 
         with tqdm(total=iter_max) as t:
-            for idx, data in enumerate(manager.dataloaders["test"]):
+            for idx, data in enumerate(manager.dataloaders[params.dataset_type]):
                 params.current_iter = idx + 1
 
                 data = to_cuda(params, data)
