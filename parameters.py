@@ -87,6 +87,8 @@ def common_config(cfg):
     exp_dir = os.path.join(cfg.exp_root, cfg.exp_name)
     cfg.model_dir = os.path.join(exp_dir, f"exp_{cfg.exp_id}")
     cfg.tb_path = os.path.join(exp_dir, 'tf_log', f'exp_{cfg.exp_id}')
+    if 'restore_file' in cfg and cfg.restore_file is not None:
+        cfg.restore_file = os.path.join(cfg.model_dir, cfg.restore_file)
     if (
         cfg.is_exp_rm_protect
         and os.path.exists(cfg.model_dir)
