@@ -1,9 +1,8 @@
 import os
 import time
+import ipdb
 
 from subprocess import check_call
-
-from sqlalchemy import false
 
 
 class TmuxOps:
@@ -12,6 +11,7 @@ class TmuxOps:
         # '''  tmux new-session -s a -n editor -d
         # test:  new_session('a','b')
         # '''
+        print(f'session_name: {session_name}, first_name: {first_name}')
         os.system("tmux new-session -s {} -n {} -d".format(session_name, first_name))
 
     @classmethod
@@ -55,6 +55,15 @@ class TmuxOps:
         cls.split_window(session_name, window_name, h_v='v', panel_number=2)
 
     @classmethod
+    def split_window_by_6(cls, session_name, window_name):
+
+        cls.split_window(session_name, window_name, h_v='h', panel_number=0)
+        cls.split_window(session_name, window_name, h_v='h', panel_number=2)
+        cls.split_window(session_name, window_name, h_v='v', panel_number=0)
+        cls.split_window(session_name, window_name, h_v='v', panel_number=2)
+        cls.split_window(session_name, window_name, h_v='v', panel_number=4)
+
+    @classmethod
     def split_window_by_8(cls, session_name, window_name):
 
         cls.split_window_by_4(session_name, window_name)
@@ -82,10 +91,10 @@ class TmuxOps:
         # demo()
         session_name = 'a'
         window_name = 'c'
-        cls.new_session(session_name)
+        cls.new_session(session_name, '1234567')
         cls.new_window(session_name, window_name)
-        cls.split_window_by_16(session_name, window_name)
-        for i in range(16):
+        cls.split_window_by_2(session_name, window_name)
+        for i in range(2):
             time.sleep(0.1)
             cls.run_command(session_name, window_name, i, command_line='ls')
 
@@ -103,21 +112,15 @@ class TmuxOps:
         )
 
     @classmethod
-    def run_task(cls, task_ls, task_name='demo', session_name='exp', if_serial=True):
+    def run_task(cls, task_ls, task_name='demo', session_name='exp', start_id=0):
         N = len(task_ls)
         session_name = session_name
         window_number = 0
         ind = -1
-
-        def check_finish(command_line, sleep_time=5):
-            model_dir = command_line.split("--model_dir ")[-1]
-            finish_flag = os.path.join(model_dir, "finish_flag.txt")
-            while True:
-                if not os.path.exists(finish_flag):
-                    time.sleep(sleep_time)
-                else:
-                    os.remove(finish_flag)
-                    break
+        # new session -> new window -> split window
+        end_id = start_id + len(task_ls) - 1
+        first_name = f'{start_id}-{end_id}'
+        cls.new_session(session_name, first_name)
 
         def create_window(window_number, panel_number=16):
             window_name = task_name + '_%s' % window_number
@@ -128,6 +131,9 @@ class TmuxOps:
             elif panel_number == 8:
                 print('create a window with %s panels' % panel_number)
                 cls.split_window_by_8(session_name, window_name)
+            elif panel_number == 6:
+                print('create a window with %s panels' % panel_number)
+                cls.split_window_by_6(session_name, window_name)
             elif panel_number == 4:
                 print('create a window with %s panels' % panel_number)
                 cls.split_window_by_4(session_name, window_name)
@@ -141,7 +147,7 @@ class TmuxOps:
             window_number += 1
             return window_number, window_name
 
-        def run_16(data_ls, cnt, window_number, if_serial):
+        def run_16(data_ls, cnt, window_number):
             for _ in range(len(data_ls) // 16):
                 # create window
                 window_number, window_name = create_window(
@@ -159,12 +165,9 @@ class TmuxOps:
                         command_line=data_ls[cnt],
                     )
                     print(window_name, data_ls[cnt])
-                    if if_serial:
-                        check_finish(data_ls[cnt])
-
             return cnt, window_number
 
-        def run_one_window(data_ls, cnt, window_number, panel_number, if_serial):
+        def run_one_window(data_ls, cnt, window_number, panel_number):
             window_number, window_name = create_window(
                 window_number, panel_number=panel_number
             )
@@ -180,48 +183,31 @@ class TmuxOps:
                     command_line=data_ls[cnt],
                 )
                 print(window_name, data_ls[cnt])
-                if if_serial:
-                    check_finish(data_ls[cnt])
-
             return cnt, window_number
 
         if N > 16:
-            ind, window_number = run_16(
-                task_ls, cnt=ind, window_number=window_number, if_serial=if_serial
-            )
-
+            ind, window_number = run_16(task_ls, cnt=ind, window_number=window_number)
         rest_number = N - ind - 1
         if rest_number > 8:
             ind, window_number = run_one_window(
-                task_ls,
-                cnt=ind,
-                window_number=window_number,
-                panel_number=16,
-                if_serial=if_serial,
+                task_ls, cnt=ind, window_number=window_number, panel_number=16
             )
         elif rest_number > 4:
             ind, window_number = run_one_window(
-                task_ls,
-                cnt=ind,
-                window_number=window_number,
-                panel_number=8,
-                if_serial=if_serial,
+                task_ls, cnt=ind, window_number=window_number, panel_number=8
             )
         elif rest_number > 2:
             ind, window_number = run_one_window(
-                task_ls,
-                cnt=ind,
-                window_number=window_number,
-                panel_number=4,
-                if_serial=if_serial,
+                task_ls, cnt=ind, window_number=window_number, panel_number=4
             )
         elif rest_number > 0:
             ind, window_number = run_one_window(
-                task_ls,
-                cnt=ind,
-                window_number=window_number,
-                panel_number=2,
-                if_serial=if_serial,
+                task_ls, cnt=ind, window_number=window_number, panel_number=2
             )
         else:
             pass
+
+
+if __name__ == '__main__':
+    t = TmuxOps()
+    t.demo()

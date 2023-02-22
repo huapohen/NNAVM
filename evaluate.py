@@ -85,7 +85,7 @@ def evaluate(manager):
                 if params.eval_visualize_save:
                     visulize_results(params, data)
                     # sys.exit()
-                
+
                 t.set_description()
                 t.update()
 
@@ -125,9 +125,6 @@ def run_all_exps(exp_id):
         # run test by DIY in designated diy_params.json
         '''python evaluate.py --params_path diy_param_json_path'''
         params = utils.Params(args.params_path)
-        exp_dir = os.path.join(params.exp_root, params.exp_name)
-        params.model_dir = os.path.join(exp_dir, f"exp_{params.exp_id}")
-        params.tb_path = os.path.join(exp_dir, 'tf_log', f'exp_{params.exp_id}')
     else:
         # run by python train.py
         if exp_id is not None:
@@ -135,7 +132,7 @@ def run_all_exps(exp_id):
         cfg = get_config(args, mode='test')
         dic_params = json.loads(json.dumps(cfg))
         obj_params = dictToObj(dic_params)
-        params_default_path = os.path.join(obj_params.exp_root, 'params.json')
+        params_default_path = os.path.join(obj_params.exp_root_dir, 'params.json')
         model_json_path = os.path.join(obj_params.model_dir, "params.json")
         assert os.path.isfile(
             model_json_path

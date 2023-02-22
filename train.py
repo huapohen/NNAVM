@@ -44,6 +44,9 @@ torch.multiprocessing.set_sharing_strategy("file_system")
 parser = argparse.ArgumentParser()
 parser.add_argument("--params_path", type=str, default=None, help="params file")
 parser.add_argument(
+    "--exp_root_dir", type=str, default=None, help="parent dir of experiments"
+)
+parser.add_argument(
     "--model_dir", type=str, default=None, help="Directory containing params.json"
 )
 parser.add_argument(
@@ -68,6 +71,7 @@ parser.add_argument(
 parser.add_argument(
     "-exp", "--exp_name", type=str, default=None, help="experiment name."
 )
+parser.add_argument("-eid", "--exp_id", type=int, default=None, help="experiment id.")
 parser.add_argument(
     "-tb",
     "--tb_path",
@@ -167,21 +171,16 @@ if __name__ == "__main__":
         # run train by DIY in designated diy_params.json
         '''python train.py --params_path diy_param_json_path'''
         params = utils.Params(args.params_path)
-        exp_dir = os.path.join(params.exp_root, params.exp_name)
-        params.model_dir = os.path.join(exp_dir, f"exp_{params.exp_id}")
-        params.tb_path = os.path.join(exp_dir, 'tf_log', f'exp_{params.exp_id}')
     elif args.gpu_used is not None:
         # run train.py through search_hyperparams.py
-        default_json_path = os.path.join("experiments", "params.json")
-        params = utils.Params(default_json_path)
-        try:
-            shutil.rmtree(args.model_dir)
-            shutil.rmtree(args.tb_path)
-        except:
-            pass
-        model_json_path = os.path.join(args.model_dir, "params.json")
-        model_params_dict = utils.Params(model_json_path).dict
-        params.update(model_params_dict)
+        print(args.__dict__)
+        # ipdb.set_trace()
+        exp_json_path = os.path.join(args.model_dir, "params.json")
+        params = utils.Params(exp_json_path)
+        params.update(args.__dict__)
+        file_name = f"{params.exp_name}_exp_{params.exp_id}.json"
+        params.exp_json_path1 = exp_json_path
+        params.exp_json_path2 = os.path.join(params.extra_config_json_dir, file_name)
     else:
         # run by python train.py
         cfg = get_config(args, mode='train')
@@ -191,15 +190,15 @@ if __name__ == "__main__":
         params = utils.Params(default_json_path)
         params.update(obj_params)
         file_name = f"{params.exp_name}_exp_{params.exp_id}.json"
-        extra_config_json_path = os.path.join("experiments", 'config')
-        exp_json_path1 = os.path.join(params.model_dir, "params.json")
-        exp_json_path2 = os.path.join(extra_config_json_path, file_name)
+        params.extra_config_json_dir = os.path.join("experiments", 'config')
+        params.exp_json_path1 = os.path.join(params.model_dir, "params.json")
+        params.exp_json_path2 = os.path.join(params.extra_config_json_dir, file_name)
         # resume
         if 'restore_file' not in obj_params:
             try:
                 shutil.rmtree(params.model_dir)
                 shutil.rmtree(params.tb_path)
-                os.remove(exp_json_path2)
+                os.remove(params.exp_json_path2)
             except:
                 pass
         else:
@@ -209,16 +208,16 @@ if __name__ == "__main__":
 
     os.makedirs(params.model_dir, exist_ok=True)
     os.makedirs(params.tb_path, exist_ok=True)
-    os.makedirs(extra_config_json_path, exist_ok=True)
+    os.makedirs(params.extra_config_json_dir, exist_ok=True)
 
     # Assign dataset
     if params.eval_freq < params.num_epochs:
         params.dataset_type = 'basic'
 
     # Save params
-    if 'restore_file' not in vars(params):
-        params.save(exp_json_path1)
-        params.save(exp_json_path2)
+    if 'restore_file' not in vars(params) or params.restore_file is None:
+        params.save(params.exp_json_path1)
+        params.save(params.exp_json_path2)
 
     # Set the logger
     logger = utils.set_logger(os.path.join(params.model_dir, "train.log"))
@@ -305,7 +304,7 @@ if __name__ == "__main__":
     )
 
     # Continue training
-    if 'restore_file' in vars(params):
+    if 'restore_file' in vars(params) and params.restore_file is not None:
         manager.load_checkpoints()
 
     # Train the model

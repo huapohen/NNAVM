@@ -13,17 +13,19 @@ from common import utils
 from tensorboardX import SummaryWriter
 
 
-class Manager():
-    def __init__(self,
-                 model,
-                 optimizer,
-                 scheduler,
-                 params,
-                 dataloaders,
-                 writer,
-                 logger,
-                 exp_name=None,
-                 tb_path=None):
+class Manager:
+    def __init__(
+        self,
+        model,
+        optimizer,
+        scheduler,
+        params,
+        dataloaders,
+        writer,
+        logger,
+        exp_name=None,
+        tb_path=None,
+    ):
         # params status
         self.params = params
 
@@ -73,24 +75,30 @@ class Manager():
             for k, v in loss.items():
                 self.loss_status[k].update(
                     val=v.item(),
-                    num=batch_size if batch_size is not None else
-                    self.params.train_batch_size)
-                if (self.step % 100 == 0):
-                    self.writer.add_scalar("train/" + k,
-                                           v.item(),
-                                           global_step=self.step)
+                    num=batch_size
+                    if batch_size is not None
+                    else self.params.train_batch_size,
+                )
+                if self.step % 100 == 0:
+                    self.writer.add_scalar(
+                        "train/" + k, v.item(), global_step=self.step
+                    )
         elif split == "val":
             for k, v in loss.items():
                 self.loss_status[k].update(
                     val=v.item(),
                     num=batch_size
-                    if batch_size is not None else self.params.eval_batch_size)
+                    if batch_size is not None
+                    else self.params.eval_batch_size,
+                )
         elif split == "test":
             for k, v in loss.items():
                 self.loss_status[k].update(
                     val=v.item(),
                     num=batch_size
-                    if batch_size is not None else self.params.eval_batch_size)
+                    if batch_size is not None
+                    else self.params.eval_batch_size,
+                )
         else:
             raise ValueError("Wrong eval type: {}".format(split))
 
@@ -102,17 +110,19 @@ class Manager():
                 self.val_status[k].update(
                     val=v,
                     num=batch_size
-                    if batch_size is not None else self.params.eval_batch_size)
-                self.cur_val_score = self.val_status[
-                    self.params.major_metric].avg
+                    if batch_size is not None
+                    else self.params.eval_batch_size,
+                )
+                self.cur_val_score = self.val_status[self.params.major_metric].avg
         elif split == "test":
             for k, v in metrics.items():
                 self.test_status[k].update(
                     val=v,
                     num=batch_size
-                    if batch_size is not None else self.params.eval_batch_size)
-                self.cur_test_score = self.test_status[
-                    self.params.major_metric].avg
+                    if batch_size is not None
+                    else self.params.eval_batch_size,
+                )
+                self.cur_test_score = self.test_status[self.params.major_metric].avg
         else:
             raise ValueError("Wrong eval type: {}".format(split))
 
@@ -133,8 +143,8 @@ class Manager():
     def print_train_info(self):
         exp_name = self.params.model_dir.split('/')[-1]
         print_str = "{} Epoch: {:2d}, lr={:.8f}, ".format(
-            exp_name, self.epoch,
-            self.scheduler.get_last_lr()[0])
+            exp_name, self.epoch, self.scheduler.get_last_lr()[0]
+        )
         for k, v in self.loss_status.items():
             print_str += "%s: %.5f(%.5f) | " % (k, v.val, v.avg)
 
@@ -147,14 +157,15 @@ class Manager():
             metric_status = self.test_status
         else:
             raise ValueError("Wrong eval type: {}".format(split))
-        print_str = " | ".join("{}: {:.4f}".format(k, v.avg) 
-                               if not isinstance(v.val, int)
-                               else "{}: {}".format(k, v.val)
-                               for k, v in metric_status.items())
+        print_str = " | ".join(
+            "{}: {:.4f}".format(k, v.avg)
+            if not isinstance(v.val, int)
+            else "{}: {}".format(k, v.val)
+            for k, v in metric_status.items()
+        )
         self.logger.info(
-            colored("{} Results: {}".format(title, print_str),
-                    color,
-                    attrs=["bold"]))
+            colored("{} Results: {}".format(title, print_str), color, attrs=["bold"])
+        )
 
     def check_best_save_last_checkpoints(self, latest_freq=5):
 
@@ -174,95 +185,110 @@ class Manager():
         if self.epoch % latest_freq == 0:
             if self.params.save_every_epoch:
                 every_epoch_dir = os.path.join(
-                    self.params.model_dir, 'every_epoch_state')
+                    self.params.model_dir, 'every_epoch_state'
+                )
                 os.makedirs(every_epoch_dir, exist_ok=True)
                 every_epoch_file = os.path.join(
-                    every_epoch_dir, f"epoch_{self.epoch}.pth")
+                    every_epoch_dir, f"epoch_{self.epoch}.pth"
+                )
                 torch.save(state, every_epoch_file)
             latest_ckpt_name = os.path.join(
-                self.params.model_dir,
-                self.params.net_type + "_model_latest.pth")
+                self.params.model_dir, self.params.net_type + "_model_latest.pth"
+            )
             if self.params.save_mode == "local":
                 torch.save(state, latest_ckpt_name)
             else:
                 raise NotImplementedError
-            self.logger.info(
-                "Saved latest checkpoint to: {}".format(latest_ckpt_name))
+            self.logger.info("Saved latest checkpoint to: {}".format(latest_ckpt_name))
 
         # save val latest metrics, and check if val is best checkpoints
         if "val" in self.dataloaders:
             val_latest_metrics_name = os.path.join(
-                self.params.model_dir,
-                self.params.net_type + "_val_metrics_latest.json")
+                self.params.model_dir, self.params.net_type + "_val_metrics_latest.json"
+            )
             utils.save_dict_to_json(self.val_status, val_latest_metrics_name)
-            is_best = self.cur_val_score > self.best_val_score if self.params.metric_mode == 'ascend' \
+            is_best = (
+                self.cur_val_score > self.best_val_score
+                if self.params.metric_mode == 'ascend'
                 else self.cur_val_score < self.best_val_score
+            )
             if is_best:
                 # save metrics
                 self.best_val_score = self.cur_val_score
                 best_metrics_name = os.path.join(
                     self.params.model_dir,
-                    self.params.net_type + "_val_metrics_best.json")
+                    self.params.net_type + "_val_metrics_best.json",
+                )
                 val_status_save = self.val_status.copy()
-                val_status_save.update(epoch=self.epoch,
-                                       epoch_val=self.epoch_val,
-                                       step=self.step)
+                val_status_save.update(
+                    epoch=self.epoch, epoch_val=self.epoch_val, step=self.step
+                )
                 utils.save_dict_to_json(val_status_save, best_metrics_name)
 
-                self.logger.info("Current is val best, score={:.5f}".format(
-                    self.best_val_score))
+                self.logger.info(
+                    "Current is val best, score={:.5f}".format(self.best_val_score)
+                )
                 # save checkpoint
                 best_ckpt_name = os.path.join(
-                    self.params.model_dir,
-                    self.params.net_type + "_val_model_best.pth")
+                    self.params.model_dir, self.params.net_type + "_val_model_best.pth"
+                )
                 if self.params.save_mode == "local":
                     torch.save(state, best_ckpt_name)
 
                 self.logger.info(
-                    "Saved val best checkpoint to: {}".format(best_ckpt_name))
+                    "Saved val best checkpoint to: {}".format(best_ckpt_name)
+                )
 
         # save test latest metrics, and check if test is best checkpoints
         # if self.dataloaders["test"] is not None:
         if "test" in self.dataloaders:
             test_latest_metrics_name = os.path.join(
                 self.params.model_dir,
-                self.params.net_type + "_test_metrics_latest.json")
+                self.params.net_type + "_test_metrics_latest.json",
+            )
             utils.save_dict_to_json(self.test_status, test_latest_metrics_name)
-            is_best = self.cur_test_score > self.best_test_score if self.params.metric_mode == 'ascend' \
+            is_best = (
+                self.cur_test_score > self.best_test_score
+                if self.params.metric_mode == 'ascend'
                 else self.cur_test_score < self.best_test_score
+            )
             if is_best:
                 # save metrics
                 self.best_test_score = self.cur_test_score
                 best_metrics_name = os.path.join(
                     self.params.model_dir,
-                    self.params.net_type + "_test_metrics_best.json")
+                    self.params.net_type + "_test_metrics_best.json",
+                )
                 test_status_save = self.test_status.copy()
-                test_status_save.update(epoch=self.epoch,
-                                        epoch_val=self.epoch_val,
-                                        step=self.step)
+                test_status_save.update(
+                    epoch=self.epoch, epoch_val=self.epoch_val, step=self.step
+                )
                 utils.save_dict_to_json(test_status_save, best_metrics_name)
-                self.logger.info("Current is test best, score={:.5f}".format(
-                    self.best_test_score))
+                self.logger.info(
+                    "Current is test best, score={:.5f}".format(self.best_test_score)
+                )
                 # save checkpoint
                 best_ckpt_name = os.path.join(
-                    self.params.model_dir,
-                    self.params.net_type + "_test_model_best.pth")
+                    self.params.model_dir, self.params.net_type + "_test_model_best.pth"
+                )
                 if self.params.save_mode == "local":
                     torch.save(state, best_ckpt_name)
 
                 self.logger.info(
-                    "Saved test best checkpoint to: {}".format(best_ckpt_name))
+                    "Saved test best checkpoint to: {}".format(best_ckpt_name)
+                )
 
     def load_checkpoints(self):
         if self.params.save_mode == "local":
             if self.params.cuda:
                 state = torch.load(
-                    os.path.join(self.params.model_dir,
-                                 self.params.restore_file))
+                    os.path.join(self.params.model_dir, self.params.restore_file)
+                )
             else:
-                state = torch.load(os.path.join(self.params.model_dir,
-                                                self.params.restore_file),
-                                   map_location=torch.device('cpu'))
+                state = torch.load(
+                    os.path.join(self.params.model_dir, self.params.restore_file),
+                    map_location=torch.device('cpu'),
+                )
 
         ckpt_component = []
         if "state_dict" in state and self.model is not None:
@@ -292,7 +318,7 @@ class Manager():
             ckpt_component.append("net")
 
         if not self.params.only_weights:
-            
+
             if "optimizer" in state and self.optimizer is not None:
                 try:
                     if not self.params.learning_rate_new:
@@ -310,8 +336,7 @@ class Manager():
                     self.optimizer.load_state_dict(optimizer_dict)
                 ckpt_component.append("opt")
 
-            if "scheduler" in state and self.train_status[
-                    "scheduler"] is not None:
+            if "scheduler" in state and self.train_status["scheduler"] is not None:
                 try:
                     if not self.params.learning_rate_new:
                         self.scheduler.load_state_dict(state["scheduler"])
@@ -329,27 +354,27 @@ class Manager():
                 ckpt_component.append("sch")
 
             if "step" in state:
-                self.train_status["step"] = state["step"]# + 1
+                self.train_status["step"] = state["step"]  # + 1
                 ckpt_component.append("step")
                 self.step = self.train_status["step"]
 
             if "epoch" in state:
-                self.train_status["epoch"] = state["epoch"]# + 1
-                ckpt_component.append("epoch: {}".format(
-                    self.train_status["epoch"]))
+                self.train_status["epoch"] = state["epoch"]  # + 1
+                ckpt_component.append("epoch: {}".format(self.train_status["epoch"]))
                 self.epoch = self.train_status["epoch"]
 
             if "best_val_score" in state:
                 self.best_val_score = state["best_val_score"]
-                ckpt_component.append("best val score: {:.3g}".format(
-                    self.best_val_score))
+                ckpt_component.append(
+                    "best val score: {:.3g}".format(self.best_val_score)
+                )
 
             if "best_test_score" in state:
                 self.best_test_score = state["best_test_score"]
-                ckpt_component.append("best test score: {:.3g}".format(
-                    self.best_test_score))
+                ckpt_component.append(
+                    "best test score: {:.3g}".format(self.best_test_score)
+                )
 
         ckpt_component = ", ".join(i for i in ckpt_component)
-        self.logger.info("Loaded models from: {}".format(
-            self.params.restore_file))
+        self.logger.info("Loaded models from: {}".format(self.params.restore_file))
         self.logger.info("Ckpt load: {}".format(ckpt_component))
