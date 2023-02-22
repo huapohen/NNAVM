@@ -85,7 +85,8 @@ def evaluate(manager):
                 if params.eval_visualize_save:
                     visulize_results(params, data)
                     # sys.exit()
-
+                
+                t.set_description()
                 t.update()
 
                 # break
