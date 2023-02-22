@@ -42,8 +42,6 @@ def train_config(cfg):
     cfg.train_batch_size = bs
     cfg.eval_batch_size = bs
     cfg.test_data_ratio = cfg.train_data_ratio
-    cfg.is_exp_rm_protect = False
-    cfg.is_continue_train = False
     cfg = continue_train(cfg)
     # cfg.gpu_used = '0_1_2_3_4_5_6_7' # use 8 GPUs
     return cfg
@@ -67,7 +65,7 @@ def test_config(cfg, args=None):
 
 
 def continue_train(cfg):
-    if cfg.is_continue_train:
+    if 'is_continue_train' in vars(cfg) and cfg.is_continue_train:
         # cfg.restore_file = 'eeavm_test_model_best.pth'
         cfg.restore_file = "eeavm_model_latest.pth"
         cfg.only_weights = True
@@ -90,7 +88,8 @@ def common_config(cfg):
     if 'restore_file' in cfg and cfg.restore_file is not None:
         cfg.restore_file = os.path.join(cfg.model_dir, cfg.restore_file)
     if (
-        cfg.is_exp_rm_protect
+        'is_exp_rm_protect' in vars(cfg)
+        and cfg.is_exp_rm_protect
         and os.path.exists(cfg.model_dir)
         and not cfg.is_continue_train
     ):
