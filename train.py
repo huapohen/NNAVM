@@ -236,6 +236,7 @@ if __name__ == "__main__":
 
     # Set the random seed for reproducible experiments
     torch.manual_seed(params.seed)
+    np.random.seed(params.seed)
     if params.cuda:
         torch.cuda.manual_seed(params.seed)
 
