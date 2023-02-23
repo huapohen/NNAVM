@@ -94,11 +94,11 @@ def launch_training_job(
     if True:
         print(
             '\n terminal: \n'
-            f'\t input `tmux ls` to find all running tasks \n'
-            f'\t input `tmux attach -t {start_id}` to enter the tmux window \n'
-            f'\t input `CTRL+C` to interupt the task \n'
-            f'\t input `CTRL+D` to end the current subwindow \n'
-            f'\t turn off the window to keep the `tmux` window running in the background \n'
+            f'\t `tmux ls`: find all running tasks \n'
+            f'\t `tmux attach -t {start_id}` to enter the tmux window \n'
+            f'\t `Ctrl + C`: interupt the task \n'
+            f'\t `Ctrl + D`: end the current subwindow \n'
+            f'\t `Ctrl + B D`: exit the window and keep the taks running\n'
         )
         time.sleep(10)
         check_call(f'tmux ls', shell=True)
