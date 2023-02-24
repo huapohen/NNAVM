@@ -91,7 +91,7 @@ class DataMakerTorch(nn.Module):
         self.perturb_mode = 'uniform'  # randint
         # the idx=0 image don't perturb, and the idx=1 to idx=1000 images are perturbed
         self.gt_bev_pertrubed_num = 1
-        self.train_pertrubed_num = 10
+        self.train_pertrubed_num = 10  # ten pictures
         self.test_pertrubed_num = 2
         self.is_split_videos_train_test = True
         self.split_test_ratio = 0.1
