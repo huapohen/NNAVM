@@ -188,8 +188,5 @@ def save_dict_to_json(d, json_path):
         json.dump(save_dict, f, indent=4)
 
 
-def create_gif(image_list, gif_name, duration=0.5):
-    frames = []
-    for image_name in image_list:
-        frames.append(image_name)
+def create_gif(gif_name, frames, duration=0.5):
     imageio.mimsave(gif_name, frames, 'GIF', duration=duration)

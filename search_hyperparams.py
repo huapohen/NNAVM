@@ -12,6 +12,7 @@ from easydict import EasyDict
 from subprocess import check_call
 
 from common import utils
+
 # from window_segment import dispatcher_v0, tmux_v0
 from window_segment import dispatcher, tmux
 
@@ -44,7 +45,7 @@ def launch_training_job(
     num_jobs = len([v for v in itertools.product(*param_pool_dict.values())])
     num_device = len(device_used)
     exp_cmds = []
-    
+
     assert num_jobs == num_device
 
     for job_id in range(num_jobs):
@@ -140,6 +141,7 @@ def experiment():
     param_pool_dict["val_data_ratio"] = [[["v2", 0.1]]]
     param_pool_dict["eval_freq"] = [10000]
     param_pool_dict["num_epochs"] = [36]
+    param_pool_dict['exp_description'] = ['experiments description recorded here!']
 
     # '0', '1', '2', '3', '4', '5', '6', '7'
     # device_used = ['6']
