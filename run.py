@@ -5,6 +5,6 @@ from segment.inference import segment_inference
 
 if __name__ == "__main__":
 
-    # run_bev_from_multi_fev()
+    run_bev_from_multi_fev()
     # unit_test_warp_image()
-    segment_inference()
+    # segment_inference()

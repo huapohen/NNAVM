@@ -18,8 +18,8 @@ from skimage import morphology
 from easydict import EasyDict
 from itertools import permutations
 
-from .calibrate_params import CalibrateParameter
-from .torch_class_op import RemapTableTorchOP, HomoTorchOP, WarpTorchOP
+from dataset.datamaker.calibrate_params import CalibrateParameter
+from dataset.datamaker.torch_class_op import RemapTableTorchOP, HomoTorchOP, WarpTorchOP
 from util.multi_threads_op import ThreadsOP, MultiThreadsProcess
 
 # at project root directory:
@@ -67,7 +67,7 @@ class DataMakerTorch(nn.Module):
         super().__init__()
         self.dataset_root = '/home/data/lwb/data'
         self.dataset_name = 'dybev'
-        self.dataset_version = version = 'v5'
+        self.dataset_version = version = 'v8'
         self.dataset_sv_dir = os.path.join(self.dataset_root, self.dataset_name)
         self.dataset_fev_video_dir_name = 'AVM_record_ocr'
         self.generate_dir_name = 'generate'
@@ -87,7 +87,7 @@ class DataMakerTorch(nn.Module):
         # self.src_img_mode = self.src_img_mode_key_name.undist
         bev_mode = 'fev2bev' if self.src_img_mode == 'fev' else 'undist2bev'
         self.enable_cuda = enable_cuda
-        self.offset_pix_range = 15
+        self.offset_pix_range = 3
         self.perturb_mode = 'uniform'  # randint
         # the idx=0 image don't perturb, and the idx=1 to idx=1000 images are perturbed
         self.gt_bev_pertrubed_num = 1
@@ -319,7 +319,7 @@ class DataMakerTorch(nn.Module):
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             img = torch.from_numpy(img).unsqueeze(0)
             return img, name
-
+        
         if align_fblr:
             src_fblr, nam_fblr = {}, {}
             for camera in self.camera_fblr:
@@ -380,8 +380,6 @@ class DataMakerTorch(nn.Module):
                 if self.enable_cuda:
                     img_batch = img_batch.cuda()
                 src_fblr[camera] = img_batch
-            else:
-                raise ValueError
         else:
             # not four cameras
             with open(self.src_img_path_record_txt, 'r') as f:
